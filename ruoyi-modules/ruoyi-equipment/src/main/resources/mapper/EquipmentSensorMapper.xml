@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.equipment.mapper.EquipmentSensorMapper">
+
+    <resultMap id="BaseResultMap" type="com.ruoyi.equipment.entity.EquipmentSensor">
+        <id column="id" property="id"/>
+        <result column="sensor_code" property="sensorCode"/>
+        <result column="sensor_name" property="sensorName"/>
+        <result column="sensor_unit" property="sensorUnit"/>
+        <result column="sensor_status" property="sensorStatus"/>
+        <result column="equipment_id" property="equipmentId"/>
+        <result column="equipment_name" property="equipmentName"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+        <result column="create_user" property="createUser"/>
+        <result column="update_user" property="updateUser"/>
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id, sensor_code, sensor_name, sensor_unit, sensor_status,
+        equipment_id, equipment_name, create_time, update_time, create_user, update_user
+    </sql>
+
+    <select id="selectSensorPage" resultType="com.ruoyi.equipment.entity.vo.EquipmentSensorVO">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM equipment_sensor
+        <trim prefix="WHERE" prefixOverrides="AND|OR">
+            <if test="query.sensorCode != null and query.sensorCode != ''">
+                AND sensor_code LIKE CONCAT('%', #{query.sensorCode}, '%')
+            </if>
+            <if test="query.sensorName != null and query.sensorName != ''">
+                AND sensor_name LIKE CONCAT('%', #{query.sensorName}, '%')
+            </if>
+            <if test="query.equipmentId != null">
+                AND equipment_id = #{query.equipmentId}
+            </if>
+            <if test="query.sensorStatus != null">
+                AND sensor_status = #{query.sensorStatus}
+            </if>
+            AND delete_flag = 0
+        </trim>
+        ORDER BY create_time DESC
+    </select>
+
+    <select id="selectByEquipmentId" resultType="com.ruoyi.equipment.entity.vo.EquipmentSensorVO">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM equipment_sensor
+        WHERE equipment_id = #{equipmentId}
+        AND delete_flag = 0
+        ORDER BY create_time DESC
+    </select>
+
+</mapper>

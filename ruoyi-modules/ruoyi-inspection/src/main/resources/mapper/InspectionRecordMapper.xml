@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.inspection.mapper.InspectionRecordMapper">
+
+    <resultMap id="BaseResultMap" type="com.ruoyi.inspection.entity.InspectionRecord">
+        <id column="id" property="id" />
+        <result column="part_id" property="partId" />
+        <result column="inspection_time" property="inspectionTime" />
+        <result column="is_qualified" property="isQualified" />
+        <result column="inspection_details" property="inspectionDetails" />
+        <result column="inspection_suggestion" property="inspectionSuggestion" />
+        <result column="inspector" property="inspector" />
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id, part_id, inspection_time, is_qualified, inspection_details, inspection_suggestion, inspector
+    </sql>
+
+    <insert id="insert" parameterType="com.ruoyi.inspection.entity.InspectionRecord">
+        INSERT INTO inspection_records (part_id, is_qualified, inspection_details, inspection_suggestion, inspector)
+        VALUES (#{partId}, #{isQualified}, #{inspectionDetails}, #{inspectionSuggestion}, #{inspector})
+    </insert>
+
+    <select id="selectByPartId" parameterType="java.lang.Long" resultMap="BaseResultMap">
+        SELECT
+        <include refid="Base_Column_List" />
+        FROM inspection_records
+        WHERE part_id = #{partId}
+        ORDER BY inspection_time DESC
+    </select>
+
+    <select id="selectAll" resultMap="BaseResultMap">
+        SELECT
+        <include refid="Base_Column_List" />
+        FROM inspection_records
+        ORDER BY inspection_time DESC
+    </select>
+</mapper>

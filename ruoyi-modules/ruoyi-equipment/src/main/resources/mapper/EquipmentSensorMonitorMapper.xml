@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.equipment.mapper.EquipmentSensorMonitorMapper">
+
+    <resultMap id="BaseResultMap" type="com.ruoyi.equipment.entity.EquipmentSensorMonitor">
+        <id column="id" property="id"/>
+        <result column="sensor_id" property="sensorId"/>
+        <result column="sensor_value" property="sensorValue"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+        <result column="create_user" property="createUser"/>
+        <result column="update_user" property="updateUser"/>
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id, sensor_id, sensor_value, create_time, update_time, create_user, update_user
+    </sql>
+
+    <sql id="MonitorData_Join">
+        m.id, m.sensor_id, m.sensor_value, m.create_time, m.update_time, m.create_user, m.update_user,
+        s.sensor_code, s.sensor_name, s.sensor_unit,
+        s.equipment_id, s.equipment_name
+    </sql>
+
+    <select id="selectLatestBySensorId" resultType="com.ruoyi.equipment.entity.vo.MonitorDataVO">
+        SELECT
+        <include refid="MonitorData_Join"/>
+        FROM equipment_sensor_monitor m
+        INNER JOIN equipment_sensor s ON m.sensor_id = s.id
+        WHERE m.sensor_id = #{sensorId}
+        AND m.delete_flag = 0
+        AND s.delete_flag = 0
+        ORDER BY m.create_time DESC
+        LIMIT 1
+    </select>
+
+    <select id="selectLatestByEquipmentId" resultType="com.ruoyi.equipment.entity.vo.MonitorDataVO">
+        SELECT t.*
+        FROM (
+            SELECT
+            <include refid="MonitorData_Join"/>
+            FROM equipment_sensor_monitor m
+            INNER JOIN equipment_sensor s ON m.sensor_id = s.id
+            WHERE s.equipment_id = #{equipmentId}
+            AND m.delete_flag = 0
+            AND s.delete_flag = 0
+            ORDER BY m.sensor_id, m.create_time DESC
+        ) t
+        GROUP BY t.sensor_id
+    </select>
+
+    <select id="selectMonitorDataPage" resultType="com.ruoyi.equipment.entity.vo.MonitorDataVO">
+        SELECT
+        <include refid="MonitorData_Join"/>
+        FROM equipment_sensor_monitor m
+        INNER JOIN equipment_sensor s ON m.sensor_id = s.id
+        <trim prefix="WHERE" prefixOverrides="AND|OR">
+            <if test="query.sensorId != null">
+                AND m.sensor_id = #{query.sensorId}
+            </if>
+            <if test="query.equipmentId != null">
+                AND s.equipment_id = #{query.equipmentId}
+            </if>
+            <if test="query.startTime != null">
+                AND m.create_time &gt;= #{query.startTime}
+            </if>
+            <if test="query.endTime != null">
+                AND m.create_time &lt;= #{query.endTime}
+            </if>
+            AND m.delete_flag = 0
+            AND s.delete_flag = 0
+        </trim>
+        ORDER BY m.create_time DESC
+    </select>
+
+    <!-- 获取监测数据表中的当前最大ID -->
+    <select id="selectMaxId" resultType="java.lang.Integer">
+        SELECT MAX(id) FROM equipment_sensor_monitor WHERE delete_flag = 0
+    </select>
+
+    <!-- 查询指定ID之后的所有新增监测数据，关联传感器和设备信息 -->
+    <select id="selectAfterMaxId" resultType="com.ruoyi.equipment.entity.vo.MonitorDataVO">
+        SELECT
+        <include refid="MonitorData_Join"/>
+        FROM equipment_sensor_monitor m
+        INNER JOIN equipment_sensor s ON m.sensor_id = s.id
+        WHERE m.id &gt; #{lastMaxId}
+        AND m.delete_flag = 0
+        AND s.delete_flag = 0
+        ORDER BY m.id ASC
+    </select>
+
+</mapper>

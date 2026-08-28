@@ -1,0 +1,26 @@
+# Tomcat
+server:
+  port: 9212
+
+# Spring
+spring:
+  application:
+    # 应用名称
+    name: ruoyi-ai
+  profiles:
+    # 环境配置
+    active: dev
+  cloud:
+    nacos:
+      discovery:
+        # 服务注册地址
+        server-addr: 127.0.0.1:8848
+      config:
+        # 配置中心地址
+        server-addr: 127.0.0.1:8848
+  config:
+    # 配置文件格式
+    file-extension: yml
+    import:
+      # 业务模块配置本地自持（application.yml），Nacos 配置可选覆盖
+      - optional:nacos:${spring.application.name}-${spring.profiles.active}.${spring.config.file-extension}

@@ -1,0 +1,84 @@
+spring:
+  # 数据源配置
+  # Druid 连接池(prefix: spring.datasource.druid,与 RuoYi-Cloud 标准对齐)
+  datasource:
+    druid:
+      driver-class-name: com.mysql.cj.jdbc.Driver
+      url: jdbc:mysql://localhost:3306/ymzw2?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+      username: root
+      password: 123!@#QWer
+      initial-size: 5
+      min-idle: 5
+      max-active: 20
+      max-wait: 60000
+      connect-timeout: 30000
+      socket-timeout: 60000
+      time-between-eviction-runs-millis: 60000
+      min-evictable-idle-time-millis: 300000
+      validation-query: SELECT 1 FROM DUAL
+      test-while-idle: true
+      test-on-borrow: false
+      test-on-return: false
+      pool-prepared-statements: true
+      max-pool-prepared-statement-per-connection-size: 20
+      filters: stat,slf4j
+      connection-properties: druid.stat.mergeSql=true;druid.stat.slowSqlMillis=5000
+    # 次数据源 TDengine(REST JDBC 6041 + Druid,Windows 免 taos.dll)
+    # 由 TdengineConfig 通过 @ConfigurationProperties(prefix="spring.datasource.tdengine") 绑定
+    tdengine:
+      driver-class-name: com.taosdata.jdbc.rs.RestfulDriver
+      url: jdbc:TAOS-RS://${TDENGINE_HOST:localhost}:${TDENGINE_PORT:6041}/ymzw
+      username: ${TDENGINE_USERNAME:root}
+      password: ${TDENGINE_PASSWORD:taosdata}
+      initial-size: 2
+      min-idle: 2
+      max-active: 10
+      max-wait: 30000
+      validation-query: select server_version()
+      test-while-idle: true
+      test-on-borrow: false
+      test-on-return: false
+      # TDengine 原生长连接,不宜频繁回收。注意:Druid 强制 time-between-eviction-runs-millis > 0(设 0 启动即失败);
+      # "少回收"应增大 min-evictable-idle-time-millis,设 0 反而是"空闲即驱逐",每次驱逐线程都会清空空闲池
+      time-between-eviction-runs-millis: 60000
+      min-evictable-idle-time-millis: 3600000
+      pool-prepared-statements: false
+
+  mail:
+    host: smtp.qq.com
+    port: 587
+    username: 1521670478@qq.com
+    password: bmtiafvhndwuhiei
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+# 告警邮件配置
+alert:
+  email:
+    to: wzh_game@outlook.com
+
+# ============ RocketMQ(传感器数据转发告警模块) ============
+# broker 未部署阶段:producer 启动仅告警不阻断,发送失败由 mqExecutor 线程记日志,部署后自动恢复
+rocketmq:
+  name-server: ${ROCKETMQ_NAMESRV:localhost:9876}
+  producer:
+    group: equipment-sensor-producer
+    send-message-timeout: 3000
+
+# MyBatis-Plus配置
+mybatis-plus:
+  mapper-locations: classpath:mapper/*.xml
+  type-aliases-package: com.ruoyi.equipment.entity
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      id-type: auto
+      logic-delete-field: deleteFlag
+      logic-delete-value: 1
+      logic-not-delete-value: 0

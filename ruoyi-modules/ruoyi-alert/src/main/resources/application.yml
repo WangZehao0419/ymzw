@@ -1,0 +1,74 @@
+# ============ spring 配置 ============
+spring:
+  # 主数据源 MySQL(告警规则/事件等关系数据,由 MysqlDataSourceConfig 声明 @Primary)
+  # Druid 连接池(prefix: spring.datasource.druid,与 RuoYi-Cloud 标准对齐)
+  # 注:TDengine 时序落库职责已移交 equipment 模块(传感器数据统一由其 MQTT 入口处理)
+  datasource:
+    druid:
+      driver-class-name: com.mysql.cj.jdbc.Driver
+      url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/ymzw2?useUnicode=true&characterEncoding=utf8&zeroDateTimeBehavior=convertToNull&useSSL=false&serverTimezone=GMT%2B8&allowPublicKeyRetrieval=true
+      username: ${MYSQL_USERNAME:root}
+      password: ${MYSQL_PASSWORD:123!@#QWer}
+      initial-size: 5
+      min-idle: 5
+      max-active: 20
+      max-wait: 60000
+      connect-timeout: 30000
+      socket-timeout: 60000
+      time-between-eviction-runs-millis: 60000
+      min-evictable-idle-time-millis: 300000
+      validation-query: SELECT 1 FROM DUAL
+      test-while-idle: true
+      test-on-borrow: false
+      test-on-return: false
+      pool-prepared-statements: true
+      max-pool-prepared-statement-per-connection-size: 20
+      filters: stat,slf4j
+      connection-properties: druid.stat.mergeSql=true;druid.stat.slowSqlMillis=5000
+
+  # Redis(ruoyi-common-redis 传递引入)
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: 0
+      timeout: 10000ms
+
+# ============ MyBatis-Plus 配置(MySQL 侧,MP 3.5.17 SB4 starter) ============
+mybatis-plus:
+  mapper-locations: classpath:mapper/*.xml
+  type-aliases-package: com.ruoyi.alert.entity
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      id-type: auto
+      logic-delete-field: deleteFlag
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+# ============ RocketMQ(消费 equipment 模块转发的传感器数据) ============
+# broker 未部署阶段:consumer 启动仅告警不阻断,后台持续重连,部署后自动恢复消费
+rocketmq:
+  name-server: ${ROCKETMQ_NAMESRV:localhost:9876}
+
+# ============ springdoc 配置 ============
+springdoc:
+  gatewayUrl: http://localhost:8080/${spring.application.name}
+  api-docs:
+    enabled: true
+  info:
+    title: '告警模块接口文档'
+    description: '云眸智维告警模块（规则管理 + RocketMQ 消费 + 事件驱动告警检测）'
+    contact:
+      name: ruoyi
+      url: https://ruoyi.vip
+
+# ============ 日志 ============
+logging:
+  level:
+    com.ruoyi.alert: debug
+    com.alibaba.nacos: WARN
+    com.alibaba.cloud.nacos: WARN

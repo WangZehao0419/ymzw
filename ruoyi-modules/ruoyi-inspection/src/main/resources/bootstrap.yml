@@ -1,0 +1,29 @@
+# Tomcat
+server:
+  port: 8083
+
+# Spring
+spring:
+  application:
+    name: ruoyi-inspection
+  profiles:
+    active: dev
+  cloud:
+    nacos:
+      discovery:
+        server-addr: 127.0.0.1:8848
+      config:
+        server-addr: 127.0.0.1:8848
+  config:
+    file-extension: yml
+    import:
+      - optional:nacos:${spring.application.name}-${spring.profiles.active}.${spring.config.file-extension}
+
+# Chroma 向量库（HTTP REST 直连，非 Spring AI starter）
+chroma:
+  host: ${CHROMA_HOST:http://106.53.26.28}
+  port: ${CHROMA_PORT:8000}
+  tenant-name: default_tenant
+  database-name: default_database
+  collection-name: ${CHROMA_COLLECTION:ai_knowledge_base}
+  initialize-schema: false

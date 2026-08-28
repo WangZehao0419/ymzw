@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.ai.mapper.QAMapper">
+
+    <!-- 结果映射 -->
+    <resultMap id="QAResultMap" type="com.ruoyi.ai.entity.QA">
+        <id property="qnaId" column="qna_id"/>
+        <result property="userId" column="user_id"/>
+        <result property="question" column="question"/>
+        <result property="answer" column="answer"/>
+        <result property="createTime" column="create_time"/>
+        <result property="username" column="username"/>
+    </resultMap>
+
+    <!-- 插入问答记录 -->
+    <insert id="insertQa" parameterType="com.ruoyi.ai.entity.QA">
+        INSERT INTO qna_management (qna_id, user_id, question, answer, create_time, username)
+        VALUES (#{qnaId}, #{userId}, #{question}, #{answer}, #{createTime}, #{username})
+    </insert>
+
+    <!-- 根据ID查询问答记录 -->
+    <select id="findByQnaId" resultMap="QAResultMap">
+        SELECT qna_id, user_id, question, answer, create_time, username
+        FROM qna_management
+        WHERE qna_id = #{qnaId}
+    </select>
+
+    <!-- 获取问答记录列表 -->
+    <select id="getQARecords" resultType="java.util.Map">
+        SELECT qna_id, user_id, question, answer, create_time, username
+        FROM qna_management
+        WHERE 1=1
+        <if test="userId != null">
+            AND user_id = #{userId}
+        </if>
+        ORDER BY create_time DESC
+        LIMIT #{pageStart}, #{pageSize}
+    </select>
+
+    <!-- 获取问答记录总数 -->
+    <select id="getQARecordsTotal" resultType="int">
+        SELECT COUNT(*)
+        FROM qna_management
+        WHERE 1=1
+        <if test="keyword != null and keyword != ''">
+            AND (question LIKE CONCAT('%', #{keyword}, '%')
+                 OR answer LIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+    </select>
+
+    <!-- 更新问答记录 -->
+    <update id="updateQA" parameterType="com.ruoyi.ai.entity.QA">
+        UPDATE qna_management
+        SET question = #{question},
+            answer = #{answer}
+        WHERE qna_id = #{qnaId}
+    </update>
+
+    <!-- 删除问答记录 -->
+    <delete id="deleteQA">
+        DELETE FROM qna_management
+        WHERE qna_id = #{qnaId}
+    </delete>
+
+</mapper>

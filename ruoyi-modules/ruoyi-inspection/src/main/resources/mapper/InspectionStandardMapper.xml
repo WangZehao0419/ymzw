@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.inspection.mapper.InspectionStandardMapper">
+
+    <resultMap id="BaseResultMap" type="com.ruoyi.inspection.entity.InspectionStandard">
+        <id column="id" property="id" />
+        <result column="part_type" property="partType" />
+        <result column="standard_name" property="standardName" />
+        <result column="standard_parameters" property="standardParameters" />
+        <result column="description" property="description" />
+        <result column="create_time" property="createTime" />
+        <result column="update_time" property="updateTime" />
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id, part_type, standard_name, standard_parameters, description, create_time, update_time
+    </sql>
+
+    <select id="selectById" parameterType="java.lang.Long" resultMap="BaseResultMap">
+        SELECT
+        <include refid="Base_Column_List" />
+        FROM inspection_standards
+        WHERE id = #{id}
+    </select>
+
+    <select id="selectByPartType" parameterType="java.lang.String" resultMap="BaseResultMap">
+        SELECT
+        <include refid="Base_Column_List" />
+        FROM inspection_standards
+        WHERE part_type = #{partType}
+    </select>
+
+    <select id="selectAll" resultMap="BaseResultMap">
+        SELECT
+        <include refid="Base_Column_List" />
+        FROM inspection_standards
+    </select>
+
+    <insert id="insert" parameterType="com.ruoyi.inspection.entity.InspectionStandard">
+        INSERT INTO inspection_standards (part_type, standard_name, standard_parameters, description)
+        VALUES (#{partType}, #{standardName}, #{standardParameters}, #{description})
+    </insert>
+
+    <update id="update" parameterType="com.ruoyi.inspection.entity.InspectionStandard">
+        UPDATE inspection_standards
+        SET part_type = #{partType},
+            standard_name = #{standardName},
+            standard_parameters = #{standardParameters},
+            description = #{description}
+        WHERE id = #{id}
+    </update>
+
+    <delete id="deleteById" parameterType="java.lang.Long">
+        DELETE FROM inspection_standards WHERE id = #{id}
+    </delete>
+</mapper>

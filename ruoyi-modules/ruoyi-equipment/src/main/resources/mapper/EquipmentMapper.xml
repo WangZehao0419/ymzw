@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.equipment.mapper.EquipmentMapper">
+
+    <resultMap id="BaseResultMap" type="com.ruoyi.equipment.entity.Equipment">
+        <id column="id" property="id"/>
+        <result column="equipment_no" property="equipmentNo"/>
+        <result column="equipment_name" property="equipmentName"/>
+        <result column="equipment_model_id" property="equipmentModelId"/>
+        <result column="equipment_model_name" property="equipmentModelName"/>
+        <result column="workshop_id" property="workshopId"/>
+        <result column="workshop_name" property="workshopName"/>
+        <result column="equipment_status" property="equipmentStatus"/>
+        <result column="equipment_install_date" property="equipmentInstallDate"/>
+        <result column="equipment_user_id" property="equipmentUserId"/>
+        <result column="equipment_user_name" property="equipmentUserName"/>
+        <result column="equipment_remark" property="equipmentRemark"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+        <result column="create_user" property="createUser"/>
+        <result column="update_user" property="updateUser"/>
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id, equipment_no, equipment_name, equipment_model_id, equipment_model_name,
+        workshop_id, workshop_name, equipment_status, equipment_install_date,
+        equipment_user_id, equipment_user_name, equipment_remark,
+        create_time, update_time, create_user, update_user
+    </sql>
+
+    <select id="selectEquipmentPage" resultType="com.ruoyi.equipment.entity.vo.EquipmentVO">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM equipment
+        <trim prefix="WHERE" prefixOverrides="AND|OR">
+            <if test="query.equipmentName != null and query.equipmentName != ''">
+                AND equipment_name LIKE CONCAT('%', #{query.equipmentName}, '%')
+            </if>
+            <if test="query.equipmentNo != null and query.equipmentNo != ''">
+                AND equipment_no LIKE CONCAT('%', #{query.equipmentNo}, '%')
+            </if>
+            <if test="query.equipmentStatus != null and query.equipmentStatus != ''">
+                AND equipment_status = #{query.equipmentStatus}
+            </if>
+            <if test="query.workshopId != null">
+                AND workshop_id = #{query.workshopId}
+            </if>
+            AND delete_flag = 0
+        </trim>
+        ORDER BY create_time DESC
+    </select>
+
+</mapper>

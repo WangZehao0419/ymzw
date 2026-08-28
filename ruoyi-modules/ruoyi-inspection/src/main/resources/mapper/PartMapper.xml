@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.inspection.mapper.PartMapper">
+
+    <resultMap id="BaseResultMap" type="com.ruoyi.inspection.entity.Part">
+        <id column="id" property="id" />
+        <result column="part_name" property="partName" />
+        <result column="part_code" property="partCode" />
+        <result column="standard_id" property="standardId" />
+        <result column="parameters" property="parameters" />
+        <result column="is_qualified" property="isQualified" />
+        <result column="inspection_time" property="inspectionTime" />
+        <result column="inspection_details" property="inspectionDetails" />
+        <result column="inspection_suggestion" property="inspectionSuggestion" />
+        <result column="create_time" property="createTime" />
+        <result column="update_time" property="updateTime" />
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id, part_name, part_code, standard_id, parameters, is_qualified,
+        inspection_time, inspection_details, inspection_suggestion,
+        create_time, update_time
+    </sql>
+
+    <select id="selectById" parameterType="java.lang.Long" resultMap="BaseResultMap">
+        SELECT
+        <include refid="Base_Column_List" />
+        FROM parts
+        WHERE id = #{id}
+    </select>
+
+    <select id="selectByPartCode" parameterType="java.lang.String" resultMap="BaseResultMap">
+        SELECT
+        <include refid="Base_Column_List" />
+        FROM parts
+        WHERE part_code = #{partCode}
+    </select>
+
+    <select id="selectByIds" parameterType="java.util.List" resultMap="BaseResultMap">
+        SELECT
+        <include refid="Base_Column_List" />
+        FROM parts
+        WHERE id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </select>
+
+    <select id="selectAll" resultMap="BaseResultMap">
+        SELECT
+        <include refid="Base_Column_List" />
+        FROM parts
+    </select>
+    <!-- 分页查询零件检测信息 -->
+    <select id="selectPartInspectionPage"
+            resultType="com.ruoyi.inspection.entity.vo.PartInspectionVO">
+        select p.id, part_name, part_code, standard_id, `is`.part_type AS partType, standard_parameters, parameters AS partParameters,
+               is_qualified AS qualifiedFlag, inspection_time, inspection_details, inspection_suggestion,
+               p.inspection_flag, p.create_time, p.update_time
+        from parts p
+        left join inspection_standards as `is` on p.standard_id = is.id
+        <trim prefix="where" prefixOverrides="and|or">
+            <if test="query.partName != null and query.partName != ''">
+                and p.part_name like concat('%', #{query.partName}, '%')
+            </if>
+            <if test="query.inspectionFlag != null">
+                and p.inspection_flag = #{query.inspectionFlag}
+            </if>
+            <if test="query.isQualified != null">
+                and p.is_qualified = #{query.isQualified}
+            </if>
+            <if test="query.inspectionStartTime != null and query.inspectionEndTime != null">
+                and p.inspection_time BETWEEN #{query.inspectionStartTime} AND #{query.inspectionEndTime}
+            </if>
+            <if test="query.isQualified != null">
+                and p.is_qualified = #{query.isQualified}
+            </if>
+            AND p.delete_flag = 0
+        </trim>
+        ORDER BY p.inspection_time desc, id asc
+    </select>
+
+    <insert id="insert" parameterType="com.ruoyi.inspection.entity.Part">
+        INSERT INTO parts (part_name, part_code, standard_id, parameters)
+        VALUES (#{partName}, #{partCode}, #{standardId}, #{parameters})
+    </insert>
+
+    <update id="update" parameterType="com.ruoyi.inspection.entity.Part">
+        UPDATE parts
+        SET part_name = #{partName},
+            part_code = #{partCode},
+            standard_id = #{standardId},
+            parameters = #{parameters},
+            is_qualified = #{isQualified},
+            inspection_time = #{inspectionTime},
+            inspection_details = #{inspectionDetails},
+            inspection_suggestion = #{inspectionSuggestion}
+        WHERE id = #{id}
+    </update>
+
+    <delete id="deleteById" parameterType="java.lang.Long">
+        DELETE FROM parts WHERE id = #{id}
+    </delete>
+
+    <update id="updateInspectionResult">
+        UPDATE parts
+        SET is_qualified = #{isQualified},
+            inspection_time = CURRENT_TIMESTAMP,
+            inspection_details = #{inspectionDetails},
+            inspection_suggestion = #{inspectionSuggestion},
+            inspection_flag = 1
+        WHERE id = #{partId}
+    </update>
+</mapper>
