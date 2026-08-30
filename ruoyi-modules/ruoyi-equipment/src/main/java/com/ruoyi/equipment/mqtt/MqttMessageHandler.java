@@ -2,13 +2,15 @@ package com.ruoyi.equipment.mqtt;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.ruoyi.equipment.config.MqttProperties;
 import com.ruoyi.equipment.event.SensorDataReceivedEvent;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken;
-import org.eclipse.paho.client.mqttv3.MqttCallback;
+import org.eclipse.paho.client.mqttv3.MqttCallbackExtended;
 import org.eclipse.paho.client.mqttv3.MqttClient;
+import org.eclipse.paho.client.mqttv3.MqttException;
 import org.eclipse.paho.client.mqttv3.MqttMessage;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
@@ -30,10 +32,11 @@ import java.time.LocalDateTime;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class MqttMessageHandler implements MqttCallback {
+public class MqttMessageHandler implements MqttCallbackExtended {
 
     private final ApplicationEventPublisher eventPublisher;
     private final ObjectMapper objectMapper;
+    private final MqttProperties mqttProperties;
 
     @Autowired(required = false)
     private MqttClient mqttClient;
@@ -46,6 +49,29 @@ public class MqttMessageHandler implements MqttCallback {
         }
         mqttClient.setCallback(this);
         log.info("[MQTT] 消息处理器已注册");
+    }
+
+    /**
+     * 连接建立完成回调(含自动重连场景)
+     * <p>
+     * paho 的 automaticReconnect 只恢复 TCP/会话连接,不恢复订阅
+     * (cleanSession 默认 true,订阅随旧会话丢弃)。若不在重连成功后
+     * 重新订阅,Broker 重启等断线场景下服务会"假活"——连接正常但
+     * 收不到任何消息。故此处对 reconnect 场景强制重订阅。
+     * </p>
+     */
+    @Override
+    public void connectComplete(boolean reconnect, String serverURI) {
+        if (!reconnect) {
+            return; // 首次连接的订阅由 MqttConfig 的 SmartLifecycle 负责,此处不重复
+        }
+        try {
+            mqttClient.subscribe(mqttProperties.getTopic(), mqttProperties.getQos());
+            log.info("[MQTT] 自动重连成功,已重新订阅主题: {}", mqttProperties.getTopic());
+        } catch (MqttException e) {
+            // 重订阅失败只记日志:订阅丢失期间消息丢弃,不影响连接本身
+            log.error("[MQTT] 重连后重新订阅失败: topic={}, error={}", mqttProperties.getTopic(), e.getMessage());
+        }
     }
 
     @Override

@@ -75,13 +75,15 @@ public class Equipment {
     /**
      * 负责人ID
      */
-    @TableField("equipment_user_id")
+    // updateById 默认忽略 null 字段，导致编辑时清空负责人后 ID 残留旧值（名称空串却能更新），故强制参与 SET
+    @TableField(value = "equipment_user_id", updateStrategy = FieldStrategy.ALWAYS)
     private Integer equipmentUserId;
 
     /**
      * 负责人名称
      */
-    @TableField("equipment_user_name")
+    // 与负责人ID成对处理，保证两字段清空/赋值语义一致
+    @TableField(value = "equipment_user_name", updateStrategy = FieldStrategy.ALWAYS)
     private String equipmentUserName;
 
     /**
@@ -89,6 +91,14 @@ public class Equipment {
      */
     @TableField("equipment_remark")
     private String equipmentRemark;
+
+    /** 孪生布局X(米,地面世界坐标,中心原点,NULL表示未摆放) */
+    @TableField("layout_x")
+    private Double layoutX;
+
+    /** 孪生布局Y(米,地面世界坐标,中心原点,NULL表示未摆放) */
+    @TableField("layout_y")
+    private Double layoutY;
 
     /**
      * 记录创建时间

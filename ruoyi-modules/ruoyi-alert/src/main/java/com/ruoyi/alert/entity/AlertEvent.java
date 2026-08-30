@@ -76,6 +76,10 @@ public class AlertEvent {
     @TableField("escalation_count")
     private Integer escalationCount;
 
+    /** 预计越界时刻(PREDICT 类型专用,RULE 类型为 null) */
+    @TableField("predicted_breach_time")
+    private LocalDateTime predictedBreachTime;
+
     @TableField(value = "create_time", fill = FieldFill.INSERT)
     private LocalDateTime createTime;
 }

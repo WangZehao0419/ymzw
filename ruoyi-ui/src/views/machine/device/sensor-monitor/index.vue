@@ -28,7 +28,7 @@
           <el-card shadow="hover" class="value-card">
             <div class="value-card-name" :title="s.sensorName">{{ s.sensorName }}</div>
             <div class="value-card-value">
-              <span class="num">{{ s.value === null || s.value === undefined ? '--' : s.value }}</span>
+              <span class="num">{{ displayValue(s) }}</span>
               <span class="unit">{{ s.sensorUnit || '' }}</span>
             </div>
             <div class="value-card-code">{{ s.sensorCode }}</div>
@@ -72,10 +72,12 @@ export default {
       // 当前设备 ID（Number）
       equipmentId: undefined,
       equipmentList: [],
-      // 传感器状态：[{ id, sensorCode, sensorName, sensorUnit, value, times[], values[] }]
+      // 传感器状态：[{ id, sensorCode, sensorName, sensorUnit, value, lastMs, times[], values[] }]
       sensors: [],
       // 流连接状态：connecting（本地初始态）| connected | reconnecting | closed
       status: 'connecting',
+      // 响应式时钟：由定时器每 5 秒刷新，驱动卡片数值按数据新鲜度重渲染（超时回落 '--'）
+      nowTick: Date.now(),
       // 流退订函数（null 表示当前未订阅）
       unsubscribe: null,
       // sensorId -> echarts 实例
@@ -112,6 +114,10 @@ export default {
   },
   mounted() {
     window.addEventListener('resize', this.handleResize)
+    // 新鲜度检测时钟：每 5 秒刷新 nowTick 触发卡片重渲染（定时器为页面级，切设备不清理，挂 this._staleTimer 避免多余响应式开销）
+    this._staleTimer = setInterval(() => {
+      this.nowTick = Date.now()
+    }, 5000)
     this.loading = true
     listEquipment({ pageNum: 1, pageSize: 100 }).then(res => {
       this.equipmentList = res.rows || []
@@ -130,6 +136,8 @@ export default {
   },
   beforeDestroy() {
     window.removeEventListener('resize', this.handleResize)
+    // 停止新鲜度检测时钟
+    clearInterval(this._staleTimer)
     // 释放流订阅与图表实例
     this.teardown()
   },
@@ -170,6 +178,8 @@ export default {
           sensorName: s.sensorName,
           sensorUnit: s.sensorUnit,
           value: null,
+          // 最近一次数据点的时间戳（毫秒）：null 表示尚无数据，卡片显示 '--'
+          lastMs: null,
           times: [],
           values: []
         }))
@@ -230,6 +240,9 @@ export default {
         s.values.shift()
       }
       s.value = vo.sensorValue
+      // 记录数据自身的时间戳用于新鲜度判定；缺失时兜底当前时刻（不用 ??，兼容 Vue2/babel 环境）
+      const ms = this.toMs(vo.createTime)
+      s.lastMs = ms === null ? Date.now() : ms
     },
     // 将传感器当前数据渲染到对应图表（notMerge 保证切换设备后不残留旧配置）
     applyChartOption(s) {
@@ -304,13 +317,45 @@ export default {
     goBack() {
       this.$router.push('/machine-business/device')
     },
+    // 卡片数值展示：数据非空且距最后一次数据点不足 15 秒才显示真实值，否则回落 '--'
+    // 15 秒阈值 ≈ 模拟器 2 秒/条的 7 个周期，容忍短暂抖动；基于数据自身时间戳（lastMs），
+    // 历史预加载的旧数据时间基准在过去，天然判定超时，曲线照常填充而卡片不亮旧值
+    displayValue(s) {
+      return (s.value !== null && s.value !== undefined && s.lastMs !== null && this.nowTick - s.lastMs < 15000)
+        ? s.value
+        : '--'
+    },
+    // 将 createTime 解析为毫秒时间戳：兼容数组（Jackson LocalDateTime，末位纳秒）、ISO 字符串、空格分隔三种形式
+    // 注意：数组月份从 1 开始而 Date 构造从 0 开始，需减 1；解析失败返回 null
+    toMs(t) {
+      if (t === null || t === undefined) {
+        return null
+      }
+      let ms
+      if (Array.isArray(t)) {
+        ms = new Date(
+          t[0], (t[1] || 1) - 1, t[2] || 1,
+          t[3] || 0, t[4] || 0, t[5] || 0,
+          Math.floor((t[6] || 0) / 1000000) // 纳秒 → 毫秒
+        ).getTime()
+      } else {
+        // ISO 的 'T' 换成空格后 Safari 等环境也能解析
+        ms = new Date(String(t).replace('T', ' ')).getTime()
+      }
+      return isNaN(ms) ? null : ms
+    },
     // 提取 HH:mm:ss：兼容 ISO 格式（2026-08-28T12:34:56）、空格分隔、数组三种序列化形式
     formatTime(t) {
       if (t === null || t === undefined) {
         return ''
       }
-      if (Array.isArray(t) && t.length >= 3) {
+      if (Array.isArray(t)) {
         const pad = n => (n < 10 ? '0' + n : '' + n)
+        // Jackson LocalDateTime 数组: [年,月,日,时,分,秒,纳秒],必须按固定索引 3/4/5 取时分秒
+        // (按末三位取会错位成"分:秒:纳秒",如 27:01:132268000)
+        if (t.length >= 6) {
+          return pad(t[3] || 0) + ':' + pad(t[4] || 0) + ':' + pad(t[5] || 0)
+        }
         return pad(t[t.length - 3] || 0) + ':' + pad(t[t.length - 2] || 0) + ':' + pad(t[t.length - 1] || 0)
       }
       const m = String(t).match(/(\d{1,2}:\d{2}:\d{2})/)

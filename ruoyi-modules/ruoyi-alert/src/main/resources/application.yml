@@ -35,6 +35,21 @@ spring:
       database: 0
       timeout: 10000ms
 
+  # 告警邮件推送(SMTP):host 为空时邮件推送自动降级跳过;
+  # 填入真实发件服务器/账号/授权码即真实发送
+  # 例(QQ 邮箱): host=smtp.qq.com port=465 username=发件邮箱 password=SMTP授权码(非登录密码)
+  mail:
+    host: ${MAIL_HOST:smtp.qq.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:1521670478@qq.com}
+    password: ${MAIL_PASSWORD:bmtiafvhndwuhiei}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          ssl:
+            enable: true
+
 # ============ MyBatis-Plus 配置(MySQL 侧,MP 3.5.17 SB4 starter) ============
 mybatis-plus:
   mapper-locations: classpath:mapper/*.xml
@@ -53,6 +68,65 @@ mybatis-plus:
 # broker 未部署阶段:consumer 启动仅告警不阻断,后台持续重连,部署后自动恢复消费
 rocketmq:
   name-server: ${ROCKETMQ_NAMESRV:localhost:9876}
+
+# ============ 告警通知(邮件+电话外呼) ============
+alert:
+  notify:
+    # 同设备+传感器+级别的通知冷却窗口(毫秒),防模拟器 20 秒/条告警的邮件电话风暴
+    throttle-ms: ${ALERT_THROTTLE_MS:600000}
+    # 阿里云语音外呼(SingleCallByTts):AK/模板任一为空时自动降级为"模拟外呼"日志
+    # 填入真实 RAM AccessKey 与控制台已报备的语音模板后即真实拨号
+    voice:
+      access-key-id: ${VOICE_AK_ID:}
+      access-key-secret: ${VOICE_AK_SECRET:}
+      template-code: ${VOICE_TEMPLATE_CODE:}
+      called-show-number: ${VOICE_SHOW_NUMBER:}
+      endpoint: dyvmsapi.aliyuncs.com
+
+# ============ 预测性维护(predict) ============
+predict:
+  # 总开关:默认关闭,演示/联调时改为 true 开启
+  # (PredictTask 每轮调度开头检查,关闭时空转直接返回,不拉数据不落库)
+  enabled: false
+  # 历史窗口点数:单传感器每轮经 Feign 拉取的最近时序点数
+  # (equipment 端单次上限 2000,超过会被截断导致窗口永远不满,勿超过;
+  #  需≥3倍 sine-period:最老 1/3 段用于基线学习,余下供检测)
+  window-points: 600
+  # 正弦周期点数:与模拟器 SINE_PERIOD_CYCLES 联动
+  # (基线同相位残差 val(i)-val(i-period) 按此对齐;模拟器周期改动时须同步,
+  #  否则残差混入周期项,residualMad 基线失真,突变检测误报/漏报)
+  sine-period: 60
+  # 预测任务调度间隔(毫秒,@Scheduled fixedDelay,上轮结束后起算)
+  interval-ms: 30000
+  # ---- 检测阈值(Task 4 突变检测) ----
+  # MAD 比值阈值:|x-median|/MAD 超过判定突发
+  mad-ratio-threshold: 2.0
+  # CUSUM 允差 k 与决策阈值 h
+  cusum-k: 0.5
+  cusum-h: 5.0
+  # ---- 趋势外推(Task 5) ----
+  # WLS 衰减因子(越接近1历史权重越高,趋势越平滑)
+  wls-lambda: 0.99
+  # 拟合优度阈值(R2 低于则不做外推)
+  r2-threshold: 0.8
+  # 最小有效斜率(低于视为无趋势)
+  min-slope: 0.005
+  # ---- 劣化状态机(Task 5) ----
+  # T1 阶段最大持续点数(超过则状态升级)
+  t1-max-points: 2400
+  # T1 退出延迟点数(连续恢复该点数才退出,防抖)
+  t1-defer-exit-points: 600
+  ai:
+    # AI 预测:未部署 AI 服务时保持 false,仅走统计+趋势外推
+    enabled: false
+    base-url: ''
+    timeout-ms: 3000
+    horizon: 60
+  # 健康度聚合权重(键与 Task 5 聚合组件对齐)
+  health-weights:
+    stat: 0.4
+    trend: 0.4
+    ai: 0.2
 
 # ============ springdoc 配置 ============
 springdoc:

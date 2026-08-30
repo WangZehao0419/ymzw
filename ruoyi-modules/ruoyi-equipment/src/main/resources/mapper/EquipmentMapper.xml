@@ -25,6 +25,7 @@
         id, equipment_no, equipment_name, equipment_model_id, equipment_model_name,
         workshop_id, workshop_name, equipment_status, equipment_install_date,
         equipment_user_id, equipment_user_name, equipment_remark,
+        layout_x, layout_y,
         create_time, update_time, create_user, update_user
     </sql>
 

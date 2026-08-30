@@ -21,4 +21,9 @@ public class ServiceNameConstants
      * 文件服务的serviceid
      */
     public static final String FILE_SERVICE = "ruoyi-file";
+
+    /**
+     * 设备模块的serviceid
+     */
+    public static final String EQUIPMENT_SERVICE = "ruoyi-equipment";
 }

@@ -26,8 +26,8 @@
 
     <el-table v-loading="loading" :data="alertList" row-key="id" :row-class-name="rowClassName">
       <el-table-column type="index" label="序号" width="60" align="center" />
-      <el-table-column label="所属设备" prop="equipmentId" width="110" align="center">
-        <template slot-scope="scope">设备#{{ scope.row.equipmentId }}</template>
+      <el-table-column label="所属设备" prop="equipmentName" width="150" align="center" show-overflow-tooltip>
+        <template slot-scope="scope">{{ scope.row.equipmentName || '设备#' + scope.row.equipmentId }}</template>
       </el-table-column>
       <el-table-column label="传感器编号" prop="sensorCode" min-width="130" />
       <el-table-column label="传感器名称" prop="sensorName" min-width="150" show-overflow-tooltip />
@@ -135,10 +135,17 @@ export default {
     statusMeta(status) {
       return { FIRING: { label: '告警中', type: 'danger' }, ACKED: { label: '已确认', type: 'warning' }, RESOLVED: { label: '已恢复', type: 'success' } }[status] || { label: status || '-', type: 'info' }
     },
-    // 时间格式化：兼容 ISO(带T) 与普通字符串两种序列化格式
+    // 时间格式化：兼容 ISO(带T)/普通字符串/数组(LocalDateTime Jackson 序列化)三种格式
     formatTime(time) {
       if (!time) return '-'
-      const normalized = typeof time === 'string' ? time.replace('T', ' ').replace(/-/g, '/') : time
+      let normalized = time
+      if (typeof time === 'string') {
+        normalized = time.replace('T', ' ').replace(/-/g, '/')
+      } else if (Array.isArray(time)) {
+        // Jackson LocalDateTime 数组 [年,月,日,时,分,秒,纳秒]:直接 new Date(数组) 是 Invalid Date,
+        // 各字段 NaN 会被 parseTime 的 value||0 转成 0,显示成 0-0-0 0:0:0,须按字段构造
+        normalized = new Date(time[0] || 1970, (time[1] || 1) - 1, time[2] || 1, time[3] || 0, time[4] || 0, time[5] || 0)
+      }
       return this.parseTime(new Date(normalized), '{y}-{m}-{d} {h}:{i}:{s}') || '-'
     }
   }

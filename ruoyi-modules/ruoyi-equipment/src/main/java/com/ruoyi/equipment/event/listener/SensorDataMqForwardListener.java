@@ -1,7 +1,10 @@
 package com.ruoyi.equipment.event.listener;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.ruoyi.equipment.entity.EquipmentSensor;
 import com.ruoyi.equipment.event.SensorDataReceivedEvent;
+import com.ruoyi.equipment.service.EquipmentSensorService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.rocketmq.client.producer.SendResult;
@@ -21,6 +24,8 @@ import java.util.Map;
  * 异步执行(mqExecutor 独立线程池),与落库、推送并行。
  * 消息体为 JSON 字符串(显式序列化,消费端 alert 模块按 String 接收),
  * topic 与 alert 侧 SensorDataMqConsumer 的注解约定一致。
+ * 消息体携带 sensorId(按 sensorCode 反查 equipment_sensor 回填,
+ * 告警侧规则按传感器主键 id 匹配)。
  * Broker 未部署阶段发送失败仅记日志,不阻断其他链路。
  * </p>
  *
@@ -36,6 +41,7 @@ public class SensorDataMqForwardListener {
 
     private final RocketMQTemplate rocketMQTemplate;
     private final ObjectMapper objectMapper;
+    private final EquipmentSensorService sensorService;
 
     @Async("mqExecutor")
     @EventListener
@@ -46,6 +52,18 @@ public class SensorDataMqForwardListener {
             msg.put("sensorValue", event.getSensorValue());
             msg.put("equipmentId", event.getEquipmentId());
             msg.put("timestamp", event.getDataTimestamp());
+            // 回填 sensorId:MQTT 入口只携带编码,而告警侧规则按主键 id 匹配,
+            // 元数据查不到或查询异常均不阻断转发(消费端按无 sensorId 场景处理)
+            try {
+                EquipmentSensor sensor = sensorService.getOne(new LambdaQueryWrapper<EquipmentSensor>()
+                        .eq(EquipmentSensor::getSensorCode, event.getSensorCode()));
+                if (sensor != null) {
+                    msg.put("sensorId", sensor.getId());
+                }
+            } catch (Exception e) {
+                log.warn("sensorId 回填查询失败,消息不带 sensorId 继续转发: sensorCode={}, error={}",
+                        event.getSensorCode(), e.getMessage());
+            }
             String json = objectMapper.writeValueAsString(msg);
 
             SendResult result = rocketMQTemplate.syncSend(TOPIC,

@@ -7,8 +7,10 @@
 
     <el-table v-loading="loading" :data="ruleList">
       <el-table-column type="index" label="序号" width="60" align="center" />
-      <el-table-column label="规则ID" prop="id" width="80" align="center" />
       <el-table-column label="传感器编号" prop="sensorCode" min-width="140" />
+      <el-table-column label="传感器名称" prop="sensorName" min-width="140" show-overflow-tooltip>
+        <template slot-scope="scope">{{ scope.row.sensorName || '-' }}</template>
+      </el-table-column>
       <el-table-column label="上限阈值" prop="upperLimit" width="110" align="center">
         <template slot-scope="scope">{{ scope.row.upperLimit === null || scope.row.upperLimit === undefined ? '-' : scope.row.upperLimit }}</template>
       </el-table-column>
@@ -33,7 +35,11 @@
 
     <el-dialog :title="title" :visible.sync="open" width="520px" append-to-body>
       <el-form ref="form" :model="form" :rules="rules" label-width="100px">
-        <el-form-item label="传感器编号" prop="sensorCode"><el-input v-model="form.sensorCode" placeholder="请输入传感器编号" /></el-form-item>
+        <el-form-item label="传感器" prop="sensorId">
+          <el-select v-model="form.sensorId" placeholder="请选择传感器" style="width:100%">
+            <el-option v-for="item in sensorOptions" :key="item.id" :label="item.sensorCode + (item.sensorName ? '（' + item.sensorName + '）' : '')" :value="item.id" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="上限阈值" prop="upperLimit"><el-input-number v-model="form.upperLimit" :precision="2" controls-position="right" placeholder="留空表示不限制" style="width:100%" /></el-form-item>
         <el-form-item label="下限阈值" prop="lowerLimit"><el-input-number v-model="form.lowerLimit" :precision="2" controls-position="right" placeholder="留空表示不限制" style="width:100%" /></el-form-item>
         <el-form-item label="持续点数" prop="sustainPoints"><el-input-number v-model="form.sustainPoints" :min="1" controls-position="right" style="width:100%" /></el-form-item>
@@ -60,6 +66,7 @@
 
 <script>
 import { listAlertRules, addAlertRule, updateAlertRule, deleteAlertRule } from '@/api/business/alert'
+import { listSensor } from '@/api/business/machine'
 
 export default {
   name: 'BusinessAlertRule',
@@ -73,13 +80,16 @@ export default {
       title: '',
       queryParams: { pageNum: 1, pageSize: 10 },
       form: {},
+      // 传感器下拉选项(进入页面加载一次,新增/编辑对话框共用)
+      sensorOptions: [],
       rules: {
-        sensorCode: [{ required: true, message: '传感器编号不能为空', trigger: 'blur' }]
+        sensorId: [{ required: true, message: '请选择传感器', trigger: 'change' }]
       }
     }
   },
   created() {
     this.getList()
+    this.getSensorOptions()
   },
   methods: {
     getList() {
@@ -91,8 +101,14 @@ export default {
         this.loading = false
       })
     },
+    // 进页面加载一次传感器下拉数据,避免每次打开对话框重复请求;pageSize 放大以覆盖全部传感器
+    getSensorOptions() {
+      listSensor({ pageNum: 1, pageSize: 1000 }).then(res => {
+        this.sensorOptions = res.rows
+      })
+    },
     reset() {
-      this.form = { id: undefined, sensorCode: '', upperLimit: undefined, lowerLimit: undefined, sustainPoints: 1, level: 'WARNING', enabled: 1 }
+      this.form = { id: undefined, sensorId: undefined, upperLimit: undefined, lowerLimit: undefined, sustainPoints: 1, level: 'WARNING', enabled: 1 }
       this.resetForm('form')
     },
     handleAdd() {

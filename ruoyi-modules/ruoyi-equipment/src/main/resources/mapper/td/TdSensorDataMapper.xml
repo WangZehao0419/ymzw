@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.equipment.tdengine.TdSensorDataMapper">
+
+    <!-- TDengine REST 驱动返回小写列名,显式 resultMap 比依赖驼峰自动映射更稳;
+         ts 列显式指定 TypeHandler 走 getTimestamp 通道(REST 驱动可靠路径) -->
+    <resultMap id="TdSensorPointMap" type="com.ruoyi.equipment.entity.td.TdSensorPoint">
+        <result column="sensor_id" property="sensorId"/>
+        <result column="ts" property="ts"
+                typeHandler="com.ruoyi.equipment.tdengine.handler.TdLocalDateTimeTypeHandler"/>
+        <result column="val" property="val"/>
+    </resultMap>
+
+    <!-- 传感器历史窗口查询:按 tag sensor_id 取最近 n 条(DESC),调用方反转为升序;
+         sensor_id 列不在 SELECT 中,DTO 只需 ts/val 两列 -->
+    <resultMap id="SensorPointDtoMap" type="com.ruoyi.equipment.api.domain.SensorPointDTO">
+        <result column="ts" property="ts"
+                typeHandler="com.ruoyi.equipment.tdengine.handler.TdEpochMillisTypeHandler"/>
+        <result column="val" property="val"/>
+    </resultMap>
+
+    <!-- 时间参数统一格式化:LocalDateTime -> 'yyyy-MM-dd HH:mm:ss.SSS' 字符串
+         (原 JdbcTemplate 版验证过的 TDengine 可靠格式;OGNL 三元防御 null) -->
+    <sql id="bindTimes">
+        <bind name="startStr"
+              value="start == null ? null : @java.time.format.DateTimeFormatter@ofPattern('yyyy-MM-dd HH:mm:ss.SSS').format(start)"/>
+        <bind name="endStr"
+              value="end == null ? null : @java.time.format.DateTimeFormatter@ofPattern('yyyy-MM-dd HH:mm:ss.SSS').format(end)"/>
+    </sql>
+
+    <!-- 历史查询与计数共用的动态 WHERE。
+         全部用 ${} 文字拼接而非 #{} 参数化:taos-jdbcdriver REST 驱动的
+         PreparedStatement 参数替换不可靠(实测 LocalDateTime 内联成无引号
+         ISO 串报 invalid timestamp、INSERT USING TAGS 子句被丢弃)。
+         拼接值来源:int 主键/Integer 参数(代码构造,非用户输入)与格式化
+         时间串,无注入面;equipmentId/start/end 判空由 <if> 保证,
+         sensorIds 为空集合时 foreach 不生成条件。 -->
+    <sql id="historyWhere">
+        <where>
+            <if test="sensorIds != null and sensorIds.size() > 0">
+                sensor_id IN
+                <foreach collection="sensorIds" item="id" open="(" separator="," close=")">${id}</foreach>
+            </if>
+            <if test="equipmentId != null">
+                AND equipment_id = ${equipmentId}
+            </if>
+            <if test="startStr != null">
+                AND ts &gt;= '${startStr}'
+            </if>
+            <if test="endStr != null">
+                AND ts &lt;= '${endStr}'
+            </if>
+        </where>
+    </sql>
+
+    <!-- 一传感器一子表:单行纯拼接 SQL(与原 JdbcTemplate 版等价),
+         子表名/tag/时间串/数值全部文字替换,驱动收到的是无 ? 占位的完整语句 -->
+    <insert id="insertOne">
+        <bind name="tsStr"
+              value="@java.time.format.DateTimeFormatter@ofPattern('yyyy-MM-dd HH:mm:ss.SSS').format(ts)"/>
+        INSERT INTO cloud_iot.sensor_${sensorId} USING cloud_iot.sensor_data TAGS(${sensorId}, ${equipmentId}) VALUES('${tsStr}', ${val})
+    </insert>
+
+    <!-- LIMIT/OFFSET 用 ${} 数字拼接:部分 TDengine REST 驱动对 LIMIT 子句
+         参数化支持不佳,int 形参本身无注入面,沿用原 JdbcTemplate 版策略 -->
+    <select id="queryHistory" resultMap="TdSensorPointMap">
+        <include refid="bindTimes"/>
+        SELECT sensor_id, ts, val FROM cloud_iot.sensor_data
+        <include refid="historyWhere"/>
+        ORDER BY ts DESC LIMIT ${limit} OFFSET ${offset}
+    </select>
+
+    <select id="countHistory" resultType="long">
+        <include refid="bindTimes"/>
+        SELECT COUNT(*) FROM cloud_iot.sensor_data
+        <include refid="historyWhere"/>
+    </select>
+
+    <select id="queryLatest" resultMap="TdSensorPointMap">
+        SELECT sensor_id, ts, val FROM cloud_iot.sensor_data WHERE sensor_id = ${sensorId} ORDER BY ts DESC LIMIT 1
+    </select>
+
+    <!-- 历史窗口:sensorId 主键 int、n 已由 Controller 截断为正 int,${} 数字拼接
+         无注入面;LIMIT 参数化在 REST 驱动上不可靠,沿用既有策略 -->
+    <select id="selectRecentWindow" resultMap="SensorPointDtoMap">
+        SELECT ts, val FROM cloud_iot.sensor_data WHERE sensor_id = ${sensorId} ORDER BY ts DESC LIMIT ${n}
+    </select>
+
+    <!-- 按 tag 列 sensor_id 分组,LAST() 取组内最新值;
+         聚合列直接 AS ts/val 对齐普通查询列名,复用同一 resultMap -->
+    <select id="queryLatestByEquipment" resultMap="TdSensorPointMap">
+        SELECT sensor_id, LAST(ts) AS ts, LAST(val) AS val FROM cloud_iot.sensor_data WHERE equipment_id = ${equipmentId} GROUP BY sensor_id
+    </select>
+
+</mapper>

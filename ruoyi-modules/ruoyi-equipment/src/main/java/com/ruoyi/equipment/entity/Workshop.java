@@ -6,16 +6,16 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 /**
- * 设备监控实体类
+ * 车间基础信息实体类
  * <p>
- * 用于存储设备传感器的实时监测数据，包括传感器参数值、记录时间等
+ * 用于存储车间的基本信息，包括车间编号、名称、位置、负责人、状态等
  * </p>
  *
  * @author smartartisan
  */
 @Data
-@TableName("equipment_sensor_monitor")
-public class EquipmentSensorMonitor {
+@TableName("workshop")
+public class Workshop {
 
     /**
      * 主键ID
@@ -24,16 +24,40 @@ public class EquipmentSensorMonitor {
     private Integer id;
 
     /**
-     * 传感器id
+     * 车间编号
      */
-    @TableField("sensor_id")
-    private Integer sensorId;
+    @TableField("workshop_no")
+    private String workshopNo;
 
     /**
-     * 传感器参数值
+     * 车间名称
      */
-    @TableField("sensor_value")
-    private Double sensorValue;
+    @TableField("workshop_name")
+    private String workshopName;
+
+    /**
+     * 车间位置
+     */
+    @TableField("workshop_location")
+    private String workshopLocation;
+
+    /**
+     * 车间负责人
+     */
+    @TableField("workshop_manager")
+    private String workshopManager;
+
+    /**
+     * 车间状态（0-启用，1-停用）
+     */
+    @TableField("workshop_status")
+    private String workshopStatus;
+
+    /**
+     * 备注
+     */
+    @TableField("workshop_remark")
+    private String workshopRemark;
 
     /**
      * 记录创建时间

@@ -1,7 +1,7 @@
 {
   "name": "ruoyi",
   "version": "3.6.8",
-  "description": "若依管理系统",
+  "description": "云眸智维管理系统",
   "author": "若依",
   "license": "MIT",
   "scripts": {
@@ -41,6 +41,7 @@
     "screenfull": "5.0.2",
     "sortablejs": "1.10.2",
     "splitpanes": "2.4.1",
+    "three": "^0.128.0",
     "vue": "2.6.12",
     "vue-count-to": "1.0.13",
     "vue-cropper": "0.5.5",

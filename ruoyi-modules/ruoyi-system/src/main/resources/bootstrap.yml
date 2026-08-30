@@ -22,5 +22,6 @@ spring:
     # 配置文件格式
     file-extension: yml
     import:
-      - nacos:application-${spring.profiles.active}.${spring.config.file-extension}
-      - nacos:${spring.application.name}-${spring.profiles.active}.${spring.config.file-extension}
+      # 业务模块配置本地自持，Nacos 配置可选覆盖(与 equipment/alert 模块约定一致)
+      - optional:nacos:application-${spring.profiles.active}.${spring.config.file-extension}
+      - optional:nacos:${spring.application.name}-${spring.profiles.active}.${spring.config.file-extension}

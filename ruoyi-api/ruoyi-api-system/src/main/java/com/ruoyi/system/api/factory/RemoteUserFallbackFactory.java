@@ -42,6 +42,12 @@ public class RemoteUserFallbackFactory implements FallbackFactory<RemoteUserServ
             {
                 return R.fail("记录用户登录信息失败:" + throwable.getMessage());
             }
+
+            @Override
+            public R<SysUser> getUserContact(Long userId, String source)
+            {
+                return R.fail("获取用户联系方式失败:" + throwable.getMessage());
+            }
         };
     }
 }

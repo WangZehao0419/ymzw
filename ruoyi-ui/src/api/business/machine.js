@@ -48,6 +48,40 @@ export function changeEquipmentStatus(id, status) {
   })
 }
 
+export function listWorkshop(query) {
+  const params = {
+    workshopNo: query.workshopNo || undefined,
+    workshopName: query.workshopName || undefined,
+    workshopStatus: query.workshopStatus === '' ? undefined : query.workshopStatus,
+    page: query.pageNum || 1,
+    pageSize: query.pageSize || 10
+  }
+  return request({ url: '/api/equipment/workshop/page', method: 'get', params }).then(res =>
+    pageResult(res, params.page, params.pageSize)
+  )
+}
+
+export function getWorkshop(id) {
+  return request({ url: `/api/equipment/workshop/${id}`, method: 'get' }).then(res => res.data || res)
+}
+
+export function addWorkshop(data) {
+  return request({ url: '/api/equipment/workshop', method: 'post', data })
+}
+
+export function updateWorkshop(data) {
+  return request({ url: '/api/equipment/workshop', method: 'put', data })
+}
+
+export function delWorkshop(id) {
+  return request({ url: `/api/equipment/workshop/${id}`, method: 'delete' })
+}
+
+// 批量保存车间设备孪生布局（layoutX/layoutY 为 null 表示移回清单）
+export function saveWorkshopLayout(workshopId, data) {
+  return request({ url: `/api/equipment/workshop/${workshopId}/layout`, method: 'put', data })
+}
+
 export function listSensor(query) {
   const params = {
     sensorName: query.sensorName || undefined,

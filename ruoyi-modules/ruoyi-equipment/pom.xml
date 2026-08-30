@@ -46,6 +46,12 @@
             <artifactId>ruoyi-common-swagger</artifactId>
         </dependency>
 
+        <!-- 设备接口模块（DTO 供内部 Feign 端点返回值使用） -->
+        <dependency>
+            <groupId>com.ruoyi</groupId>
+            <artifactId>ruoyi-api-equipment</artifactId>
+        </dependency>
+
         <!-- MyBatis-Plus SB4 starter -->
         <dependency>
             <groupId>com.baomidou</groupId>

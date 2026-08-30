@@ -21,7 +21,11 @@ public class AlertRule {
     @TableId(type = IdType.AUTO)
     private Long id;
 
-    /** 传感器编号 */
+    /** 传感器ID(主键标识,匹配与关联用) */
+    @TableField("sensor_id")
+    private Integer sensorId;
+
+    /** 传感器编号(展示兼容,由 sensorId 经 Feign 查询回填) */
     @TableField("sensor_code")
     private String sensorCode;
 
@@ -58,4 +62,8 @@ public class AlertRule {
 
     @TableField(value = "update_time", fill = FieldFill.INSERT_UPDATE)
     private LocalDateTime updateTime;
+
+    /** 传感器名称(非表字段,列表展示用,查询后按 sensorId 经 Feign 查设备服务回填) */
+    @TableField(exist = false)
+    private String sensorName;
 }

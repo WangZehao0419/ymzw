@@ -30,3 +30,14 @@ docker run -d --name rocketmq-dashboard `
   -p 18082:8080 `
   -e "JAVA_OPTS=-Drocketmq.namesrv.addr=rmqnamesrv:9876" `
   apacherocketmq/rocketmq-dashboard:2.1.0
+
+docker run -d `
+  --name emqx `
+  --hostname emqx.local `
+  -e EMQX_NODE_NAME=emqx@emqx.local `
+  -e TZ=Asia/Shanghai `
+  -p 1883:1883 -p 8083:8083 -p 8084:8084 -p 8883:8883 -p 18083:18083 `
+  -v E:\Docker\emqx\data:/opt/emqx/data `
+  -v E:\Docker\emqx\log:/opt/emqx/log `
+  emqx/emqx:5.8.9
+# 可删除-p 8083:8083 -p 8084:8084 -p 8883:8883

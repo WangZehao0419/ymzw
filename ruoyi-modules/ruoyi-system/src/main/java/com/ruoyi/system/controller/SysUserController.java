@@ -167,6 +167,21 @@ public class SysUserController extends BaseController
     }
 
     /**
+     * 内部服务调用：按用户ID查用户联系方式
+     */
+    @InnerAuth
+    @GetMapping("/inner/{userId}")
+    public R<SysUser> getUserContact(@PathVariable("userId") Long userId)
+    {
+        SysUser sysUser = userService.selectUserById(userId);
+        if (StringUtils.isNull(sysUser))
+        {
+            return R.fail("用户不存在");
+        }
+        return R.ok(sysUser);
+    }
+
+    /**
      * 获取用户信息
      * 
      * @return 用户信息

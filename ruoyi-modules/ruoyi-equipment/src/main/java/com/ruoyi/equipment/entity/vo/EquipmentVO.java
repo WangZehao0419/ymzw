@@ -76,6 +76,12 @@ public class EquipmentVO {
      */
     private String equipmentRemark;
 
+    /** 孪生布局X(米,地面世界坐标,中心原点,NULL表示未摆放) */
+    private Double layoutX;
+
+    /** 孪生布局Y(米,地面世界坐标,中心原点,NULL表示未摆放) */
+    private Double layoutY;
+
     /**
      * 创建时间
      */

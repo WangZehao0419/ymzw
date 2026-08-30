@@ -10,6 +10,20 @@ export const businessRoutes = [
     meta: { title: '智能制造', icon: 'dashboard' },
     children: [
       {
+        path: 'workshop',
+        component: () => import('@/views/machine/workshop/index'),
+        name: 'BusinessWorkshop',
+        meta: { title: '车间管理', icon: 'tree' }
+      },
+      {
+        // 车间管理「数字孪生」入口页：hidden 不显示在侧栏；noCache 离开即销毁并释放 3D 资源
+        path: 'workshop/twin',
+        component: () => import('@/views/machine/workshop/twin'),
+        name: 'BusinessWorkshopTwin',
+        meta: { title: '车间孪生编辑', noCache: true },
+        hidden: true
+      },
+      {
         path: 'device',
         component: () => import('@/views/machine/device/list'),
         name: 'BusinessDevice',
@@ -29,23 +43,29 @@ export const businessRoutes = [
         meta: { title: '传感器实时监测', icon: 'monitor', noCache: true },
         hidden: true
       },
+      // {
+      //   path: 'inspection',
+      //   component: () => import('@/views/machine/inspection'),
+      //   name: 'BusinessInspection',
+      //   meta: { title: '零件检测', icon: 'validCode' }
+      // },
+      // {
+      //   path: 'ai-model',
+      //   component: () => import('@/views/machine/ai-model/config'),
+      //   name: 'BusinessAiModel',
+      //   meta: { title: 'AI模型配置', icon: 'example' }
+      // },
+      // {
+      //   path: 'ai-service',
+      //   component: () => import('@/views/machine/ai-service'),
+      //   name: 'BusinessAiService',
+      //   meta: { title: 'AI智能分析', icon: 'monitor' }
+      // },
       {
-        path: 'inspection',
-        component: () => import('@/views/machine/inspection'),
-        name: 'BusinessInspection',
-        meta: { title: '零件检测', icon: 'validCode' }
-      },
-      {
-        path: 'ai-model',
-        component: () => import('@/views/machine/ai-model/config'),
-        name: 'BusinessAiModel',
-        meta: { title: 'AI模型配置', icon: 'example' }
-      },
-      {
-        path: 'ai-service',
-        component: () => import('@/views/machine/ai-service'),
-        name: 'BusinessAiService',
-        meta: { title: 'AI智能分析', icon: 'monitor' }
+        path: 'alert-rule',
+        component: () => import('@/views/machine/alert/rule'),
+        name: 'BusinessAlertRule',
+        meta: { title: '告警规则', icon: 'bug' }
       },
       {
         path: 'warning',
@@ -53,12 +73,7 @@ export const businessRoutes = [
         name: 'BusinessWarning',
         meta: { title: '故障预警', icon: 'message', businessType: 'warning' }
       },
-      {
-        path: 'alert-rule',
-        component: () => import('@/views/machine/alert/rule'),
-        name: 'BusinessAlertRule',
-        meta: { title: '告警规则', icon: 'bug' }
-      },
+
       {
         path: 'work-order',
         component: () => import('@/views/machine/operations'),

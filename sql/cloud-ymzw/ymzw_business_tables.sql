@@ -1,5 +1,5 @@
 -- =============================================
--- 云眸智维业务表 DDL（10 张表）
+-- 云眸智维业务表 DDL（11 张表）
 -- 数据库: MySQL 8.0+ / ry-cloud 库
 -- 字段映射规则: entity @TableField/@TableId 注解 + Java 类型
 --   Integer → INT, Long → BIGINT, Double → DOUBLE
@@ -47,7 +47,9 @@ CREATE TABLE `equipment` (
     `equipment_install_date` DATE                                           COMMENT '安装日期',
     `equipment_user_id`     INT                                             COMMENT '负责人ID',
     `equipment_user_name`   VARCHAR(50)                                     COMMENT '负责人名称',
-    `equipment_remark`      VARCHAR(500)                                    COMMENT '备注',
+    `equipment_remark`       VARCHAR(500)                                    COMMENT '备注',
+    `layout_x`              DOUBLE                                          COMMENT '孪生布局X(米,地面世界坐标,中心原点,NULL未摆放)',
+    `layout_y`              DOUBLE                                          COMMENT '孪生布局Y(米,地面世界坐标,中心原点,NULL未摆放)',
     `create_time`          DATETIME                                        COMMENT '记录创建时间',
     `update_time`          DATETIME                                        COMMENT '记录修改时间',
     `create_user`          VARCHAR(50)                                     COMMENT '创建人',
@@ -232,5 +234,33 @@ CREATE TABLE `inspection_records` (
     KEY `idx_record_inspection_time` (`inspection_time`),
     KEY `idx_record_qualified` (`is_qualified`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='检测记录表';
+
+-- =============================================
+-- 11. Equipment 模块 — 车间表
+-- entity: com.ruoyi.equipment.entity.Workshop
+-- =============================================
+DROP TABLE IF EXISTS `workshop`;
+CREATE TABLE `workshop` (
+    `id`                    INT             AUTO_INCREMENT  PRIMARY KEY     COMMENT '主键ID',
+    `workshop_no`           VARCHAR(50)     NOT NULL                        COMMENT '车间编号(如WS-001)',
+    `workshop_name`         VARCHAR(100)    NOT NULL                        COMMENT '车间名称',
+    `workshop_location`     VARCHAR(200)                                    COMMENT '车间位置',
+    `workshop_manager`      VARCHAR(50)                                     COMMENT '车间负责人',
+    `workshop_status`       VARCHAR(20)     DEFAULT '0'                     COMMENT '状态(0-启用,1-停用)',
+    `workshop_remark`       VARCHAR(500)                                    COMMENT '备注',
+    `create_time`           DATETIME                                        COMMENT '记录创建时间',
+    `update_time`           DATETIME                                        COMMENT '记录修改时间',
+    `create_user`           VARCHAR(50)                                     COMMENT '创建人',
+    `update_user`           VARCHAR(50)                                     COMMENT '修改人',
+    `delete_flag`           INT             DEFAULT 0                       COMMENT '删除状态(0-未删除,1-已删除)',
+    UNIQUE KEY `uk_workshop_no` (`workshop_no`),
+    KEY `idx_workshop_status` (`workshop_status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='车间表';
+
+-- 种子数据: 3 个示例车间
+INSERT INTO `workshop` (`workshop_no`, `workshop_name`, `workshop_location`, `workshop_manager`, `workshop_status`, `create_time`, `create_user`) VALUES
+('WS-001', '一号车间', '一号厂房一层', '张三', '0', NOW(), 'admin'),
+('WS-002', '二号车间', '一号厂房二层', '李四', '0', NOW(), 'admin'),
+('WS-003', '三号车间', '二号厂房一层', '王五', '0', NOW(), 'admin');
 
 SET FOREIGN_KEY_CHECKS = 1;

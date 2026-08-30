@@ -58,11 +58,16 @@ public class SensorDataMqConsumer implements RocketMQListener<String> {
         }
 
         int equipmentId = node.path("equipmentId").asInt(0);
+        // asInt 缺省 0 表示字段缺失或非法,归一化为 null 保持"无 id"语义(下游按 id 匹配规则)
+        Integer sensorId = node.path("sensorId").asInt(0);
+        if (sensorId <= 0) {
+            sensorId = null;
+        }
         LocalDateTime ts = parseTimestamp(node.path("timestamp").asText(null));
 
         // 发布领域事件,由 L1 规则判定监听器消费(同步执行,异常向上抛触发 MQ 重试)
-        eventPublisher.publishEvent(new SensorDataReceivedEvent(this, sensorCode, sensorValue, equipmentId, ts));
-        log.debug("[MQ] 事件已发布: code={}, equipmentId={}, value={}", sensorCode, equipmentId, sensorValue);
+        eventPublisher.publishEvent(new SensorDataReceivedEvent(this, sensorCode, sensorId, sensorValue, equipmentId, ts));
+        log.debug("[MQ] 事件已发布: code={}, sensorId={}, equipmentId={}, value={}", sensorCode, sensorId, equipmentId, sensorValue);
     }
 
     /**
