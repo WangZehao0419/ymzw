@@ -63,4 +63,14 @@ public interface RemoteEquipmentService
      */
     @GetMapping("/inner/sensor/{sensorCode}/history")
     public R<List<SensorPointDTO>> getSensorHistory(@PathVariable("sensorCode") String sensorCode, @RequestParam("points") Integer points, @RequestHeader(SecurityConstants.FROM_SOURCE) String source);
+
+    /**
+     * 下发维护复位指令（工单完成联动，MQTT maintenance/{equipmentNo}）
+     *
+     * @param equipmentId 设备ID
+     * @param source 请求来源
+     * @return 结果
+     */
+    @PostMapping("/inner/maintenance/{equipmentId}/reset")
+    public R<Void> resetDegradation(@PathVariable("equipmentId") Integer equipmentId, @RequestHeader(SecurityConstants.FROM_SOURCE) String source);
 }

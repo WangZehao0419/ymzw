@@ -49,7 +49,7 @@ public class AlertRule {
     @TableField("silence_end")
     private String silenceEnd;
 
-    /** 命中告警等级: NORMAL/WARNING/SEVERE */
+    /** 命中告警等级: NORMAL/WARNING/IMPORTANT/SEVERE/CRITICAL */
     @TableField("level")
     private String level;
 

@@ -19,7 +19,7 @@
       </el-table-column>
       <el-table-column label="持续点数" prop="sustainPoints" width="100" align="center" />
       <el-table-column label="告警级别" prop="level" width="100" align="center">
-        <template slot-scope="scope"><el-tag :type="scope.row.level === 'SEVERE' ? 'danger' : 'warning'">{{ scope.row.level === 'SEVERE' ? '严重' : '预警' }}</el-tag></template>
+        <template slot-scope="scope"><el-tag :type="levelMeta(scope.row.level).type" :effect="levelMeta(scope.row.level).effect">{{ levelMeta(scope.row.level).label }}</el-tag></template>
       </el-table-column>
       <el-table-column label="启用状态" prop="enabled" width="100" align="center">
         <template slot-scope="scope"><el-tag :type="Number(scope.row.enabled) === 1 ? 'success' : 'info'">{{ Number(scope.row.enabled) === 1 ? '启用' : '禁用' }}</el-tag></template>
@@ -46,7 +46,9 @@
         <el-form-item label="告警级别" prop="level">
           <el-select v-model="form.level" style="width:100%">
             <el-option label="预警" value="WARNING" />
+            <el-option label="重要" value="IMPORTANT" />
             <el-option label="严重" value="SEVERE" />
+            <el-option label="危急" value="CRITICAL" />
           </el-select>
         </el-form-item>
         <el-form-item label="启用状态" prop="enabled">
@@ -138,6 +140,15 @@ export default {
         this.$modal.msgSuccess('删除成功')
         this.getList()
       }).catch(() => {})
+    },
+    // 四级等级标签映射:同色系内 dark 实底强于 light 浅底区分相邻档(重要>预警、危急>严重),红色系整体重于橙色系区分高低档
+    levelMeta(level) {
+      return {
+        WARNING: { label: '预警', type: 'warning', effect: 'light' },
+        IMPORTANT: { label: '重要', type: 'warning', effect: 'dark' },
+        SEVERE: { label: '严重', type: 'danger', effect: 'light' },
+        CRITICAL: { label: '危急', type: 'danger', effect: 'dark' }
+      }[level] || { label: level || '-', type: 'info', effect: 'light' }
     }
   }
 }

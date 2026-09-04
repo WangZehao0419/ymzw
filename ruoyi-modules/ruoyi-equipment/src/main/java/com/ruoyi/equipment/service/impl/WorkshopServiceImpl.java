@@ -49,10 +49,9 @@ public class WorkshopServiceImpl extends BaseRepository<WorkshopMapper, Workshop
 
     @Override
     public IPage<WorkshopVO> page(WorkshopQuery query) {
-        // 编号/状态是明确值用精确匹配，名称需支持模糊搜索；条件式写法避免拼空的 where
+        // 状态是明确值用精确匹配，名称需支持模糊搜索；条件式写法避免拼空的 where
         LambdaQueryWrapper<Workshop> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(StringUtils.isNotEmpty(query.getWorkshopNo()), Workshop::getWorkshopNo, query.getWorkshopNo())
-                .like(StringUtils.isNotEmpty(query.getWorkshopName()), Workshop::getWorkshopName, query.getWorkshopName())
+        wrapper.like(StringUtils.isNotEmpty(query.getWorkshopName()), Workshop::getWorkshopName, query.getWorkshopName())
                 .eq(StringUtils.isNotEmpty(query.getWorkshopStatus()), Workshop::getWorkshopStatus, query.getWorkshopStatus())
                 .orderByDesc(Workshop::getId);
         Page<Workshop> page = new Page<>(query.getPage(), query.getPageSize());
@@ -75,20 +74,7 @@ public class WorkshopServiceImpl extends BaseRepository<WorkshopMapper, Workshop
     }
 
     @Override
-    public boolean checkWorkshopNoUnique(String workshopNo, Integer excludeId) {
-        LambdaQueryWrapper<Workshop> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(Workshop::getWorkshopNo, workshopNo);
-        if (excludeId != null) {
-            wrapper.ne(Workshop::getId, excludeId);
-        }
-        return this.count(wrapper) == 0;
-    }
-
-    @Override
     public boolean addWorkshop(Workshop workshop) {
-        if (!checkWorkshopNoUnique(workshop.getWorkshopNo(), null)) {
-            throw new ServiceException("车间编号已存在");
-        }
         return this.save(workshop);
     }
 
@@ -97,9 +83,6 @@ public class WorkshopServiceImpl extends BaseRepository<WorkshopMapper, Workshop
         Workshop existingWorkshop = this.getById(workshop.getId());
         if (existingWorkshop == null) {
             throw new ServiceException("车间不存在");
-        }
-        if (!checkWorkshopNoUnique(workshop.getWorkshopNo(), workshop.getId())) {
-            throw new ServiceException("车间编号已存在");
         }
         return this.updateById(workshop);
     }

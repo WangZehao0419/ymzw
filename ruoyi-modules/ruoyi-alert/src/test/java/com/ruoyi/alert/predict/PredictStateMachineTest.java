@@ -2,8 +2,9 @@ package com.ruoyi.alert.predict;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ruoyi.alert.entity.AlertEvent;
+import com.ruoyi.alert.entity.PredictAlert;
 import com.ruoyi.alert.event.AlertTriggeredEvent;
-import com.ruoyi.alert.mapper.AlertEventMapper;
+import com.ruoyi.alert.mapper.PredictAlertMapper;
 import com.ruoyi.equipment.api.domain.SensorMetaDTO;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -39,7 +40,7 @@ class PredictStateMachineTest {
     @Mock
     private ApplicationEventPublisher eventPublisher;
     @Mock
-    private AlertEventMapper alertEventMapper;
+    private PredictAlertMapper predictAlertMapper;
     @Mock
     private BaselineRegistry baselineRegistry;
 
@@ -49,7 +50,7 @@ class PredictStateMachineTest {
     @BeforeEach
     void setUp() {
         machine = new PredictStateMachine(props, baselineRegistry,
-                eventPublisher, alertEventMapper, new ObjectMapper());
+                eventPublisher, predictAlertMapper, new ObjectMapper());
         // 模拟真实同步事件链路:publishEvent → 落库监听器 insert → 自增主键回填实体
         doAnswer(inv -> {
             inv.getArgument(0, AlertTriggeredEvent.class).getAlertEvent().setId(100L);
@@ -99,9 +100,9 @@ class PredictStateMachineTest {
 
         // 只发过一条新告警(升级走 updateById)
         verify(eventPublisher, times(1)).publishEvent(any(AlertTriggeredEvent.class));
-        ArgumentCaptor<AlertEvent> upd = ArgumentCaptor.forClass(AlertEvent.class);
-        verify(alertEventMapper, atLeastOnce()).updateById(upd.capture());
-        AlertEvent last = upd.getValue();
+        ArgumentCaptor<PredictAlert> upd = ArgumentCaptor.forClass(PredictAlert.class);
+        verify(predictAlertMapper, atLeastOnce()).updateById(upd.capture());
+        PredictAlert last = upd.getValue();
         assertEquals(100L, last.getId(), "应更新原告警(同一条)");
         assertEquals("SEVERE", last.getAlertLevel());
         assertEquals("DEGRADING", machine.status("TEMP-001"));
@@ -118,8 +119,8 @@ class PredictStateMachineTest {
         machine.onRuleAlert(new AlertTriggeredEvent(this, rule));
 
         assertEquals("BREACHED", machine.status("TEMP-001"));
-        ArgumentCaptor<AlertEvent> upd = ArgumentCaptor.forClass(AlertEvent.class);
-        verify(alertEventMapper).updateById(upd.capture());
+        ArgumentCaptor<PredictAlert> upd = ArgumentCaptor.forClass(PredictAlert.class);
+        verify(predictAlertMapper).updateById(upd.capture());
         assertEquals("RESOLVED", upd.getValue().getAlertStatus(), "预测兑现后 PREDICT 告警应解除");
         assertEquals(100L, upd.getValue().getId());
     }
@@ -147,8 +148,8 @@ class PredictStateMachineTest {
         String status = machine.advance(sensor(), mad(false), cusum(false), trend(701), 55D);
 
         assertEquals("NORMAL", status);
-        ArgumentCaptor<AlertEvent> upd = ArgumentCaptor.forClass(AlertEvent.class);
-        verify(alertEventMapper).updateById(upd.capture());
+        ArgumentCaptor<PredictAlert> upd = ArgumentCaptor.forClass(PredictAlert.class);
+        verify(predictAlertMapper).updateById(upd.capture());
         assertEquals("RESOLVED", upd.getValue().getAlertStatus(), "幽灵告警应解除");
         verify(baselineRegistry).reset("TEMP-001");
     }
@@ -161,8 +162,8 @@ class PredictStateMachineTest {
         machine.reset("TEMP-001");
 
         assertEquals("NORMAL", machine.status("TEMP-001"));
-        ArgumentCaptor<AlertEvent> upd = ArgumentCaptor.forClass(AlertEvent.class);
-        verify(alertEventMapper).updateById(upd.capture());
+        ArgumentCaptor<PredictAlert> upd = ArgumentCaptor.forClass(PredictAlert.class);
+        verify(predictAlertMapper).updateById(upd.capture());
         assertEquals("RESOLVED", upd.getValue().getAlertStatus());
         verify(baselineRegistry).reset("TEMP-001");
     }
@@ -176,7 +177,7 @@ class PredictStateMachineTest {
         machine.onRuleAlert(new AlertTriggeredEvent(this, rule));
 
         assertEquals("NORMAL", machine.status("UNKNOWN-001"));
-        verify(alertEventMapper, never()).updateById(any(AlertEvent.class));
+        verify(predictAlertMapper, never()).updateById(any(PredictAlert.class));
     }
 
     private SensorMetaDTO sensor() {

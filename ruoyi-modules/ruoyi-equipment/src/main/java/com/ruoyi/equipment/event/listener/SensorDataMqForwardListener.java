@@ -27,6 +27,7 @@ import java.util.Map;
  * 消息体携带 sensorId(按 sensorCode 反查 equipment_sensor 回填,
  * 告警侧规则按传感器主键 id 匹配)。
  * Broker 未部署阶段发送失败仅记日志,不阻断其他链路。
+ * 分区顺序消息：同 sensorCode 固定队列，消费端 ConsumeMode.ORDERLY 队列级串行。
  * </p>
  *
  * @author smartartisan
@@ -66,8 +67,11 @@ public class SensorDataMqForwardListener {
             }
             String json = objectMapper.writeValueAsString(msg);
 
-            SendResult result = rocketMQTemplate.syncSend(TOPIC,
-                    MessageBuilder.withPayload(json).build());
+            // 分区顺序消息：同 sensorCode 经 hash 固定路由到同一队列，配合消费端 ORDERLY 串行。
+            // hashKey 选 sensorCode 而非 sensorId：sensorCode 是必填字段必有值，
+            // sensorId 为回填字段可能缺失，路由键只需同传感器稳定一致
+            SendResult result = rocketMQTemplate.syncSendOrderly(TOPIC,
+                    MessageBuilder.withPayload(json).build(), event.getSensorCode());
             log.debug("RocketMQ 转发完成: sensorCode={}, msgId={}, status={}",
                     event.getSensorCode(), result.getMsgId(), result.getSendStatus());
         } catch (Exception e) {

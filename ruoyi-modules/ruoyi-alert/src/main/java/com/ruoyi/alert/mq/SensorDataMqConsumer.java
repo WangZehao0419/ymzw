@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ruoyi.alert.event.SensorDataReceivedEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.rocketmq.spring.annotation.ConsumeMode;
 import org.apache.rocketmq.spring.annotation.RocketMQMessageListener;
 import org.apache.rocketmq.spring.core.RocketMQListener;
 import org.springframework.context.ApplicationEventPublisher;
@@ -33,6 +34,8 @@ import java.time.LocalDateTime;
 @RocketMQMessageListener(
         topic = "cloud-iot-sensor-data",
         consumerGroup = "alert-sensor-consumer")
+        // [二分诊断] ORDERLY 在本组合(client 5.3.1 remoting + broker 5.3.2)下消息被跳过未进 listener,暂时回退并发模式定位根因
+        // consumeMode = ConsumeMode.ORDERLY
 public class SensorDataMqConsumer implements RocketMQListener<String> {
 
     private final ApplicationEventPublisher eventPublisher;

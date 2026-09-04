@@ -85,7 +85,7 @@ alert:
 
 # ============ 预测性维护(predict) ============
 predict:
-  # 总开关:默认关闭,演示/联调时改为 true 开启
+  # 总开关:演示/联调开启
   # (PredictTask 每轮调度开头检查,关闭时空转直接返回,不拉数据不落库)
   enabled: false
   # 历史窗口点数:单传感器每轮经 Feign 拉取的最近时序点数
@@ -100,7 +100,9 @@ predict:
   interval-ms: 30000
   # ---- 检测阈值(Task 4 突变检测) ----
   # MAD 比值阈值:|x-median|/MAD 超过判定突发
-  mad-ratio-threshold: 2.0
+  # (2026-08-31 由 2.0 调 3.0:2.0 对平稳噪声偏紧,对照组 HUM-002 亦被误标 DEGRADING;
+  #  提高后 MAD 只捕捉真正的噪声体制突变,如模拟器 noise_gain=3 场景)
+  mad-ratio-threshold: 3.0
   # CUSUM 允差 k 与决策阈值 h
   cusum-k: 0.5
   cusum-h: 5.0
@@ -127,6 +129,28 @@ predict:
     stat: 0.4
     trend: 0.4
     ai: 0.2
+
+# ============ 维保工单(workorder) ============
+workorder:
+  # 工单生成总开关:RULE/PREDICT 的 WARNING/SEVERE 告警自动转维保工单
+  # (WorkOrderCreateListener 消费 AlertTriggeredEvent,关闭后告警只通知不建单)
+  enabled: true
+  # 完成工单时联动设备退化复位:Feign resetDegradation → equipment 模块
+  # → MQTT maintenance/{equipmentNo} → 模拟器按设备清零全部退化数据
+  # (关闭后完成仅落工单状态,不下发复位指令)
+  reset-on-complete: true
+
+# ============ 维护计划(plan) ============
+plan:
+  # 定时扫描开关:关闭时任务空转,不生成新工单(既有计划与工单不受影响)
+  enabled: true
+  holiday:
+    # 节假日数据自动同步开关:关闭时不再拉取,已有缓存继续生效
+    sync-enabled: true
+    # 同步时刻(每日,拉取当年+次年防跨年空窗)
+    sync-cron: "0 10 3 * * ?"
+    connect-timeout-ms: 3000
+    read-timeout-ms: 5000
 
 # ============ springdoc 配置 ============
 springdoc:

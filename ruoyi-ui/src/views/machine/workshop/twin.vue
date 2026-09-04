@@ -96,7 +96,9 @@
             <el-input v-model="workshopForm.workshopLocation" placeholder="请输入位置" />
           </el-form-item>
           <el-form-item label="负责人">
-            <el-input v-model="workshopForm.workshopManager" placeholder="请输入负责人" />
+            <el-select v-model="workshopForm.workshopManagerId" placeholder="请选择负责人" clearable filterable style="width: 100%" @change="handleManagerChange">
+              <el-option v-for="item in userOptions" :key="item.userId" :label="item.nickName" :value="item.userId" />
+            </el-select>
           </el-form-item>
           <el-form-item label="状态">
             <el-select v-model="workshopForm.workshopStatus" style="width: 100%">
@@ -119,6 +121,7 @@
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { listEquipment, updateEquipment, getWorkshop, updateWorkshop, saveWorkshopLayout } from '@/api/business/machine'
+import { listUser } from '@/api/system/user'
 
 // 设备状态 → 颜色（与设备台账一致：0 运行 / 1 待机 / 2 维护 / 3 离线），3D 与左栏小点共用同一份映射
 const STATUS_COLORS = { '0': '#67C23A', '1': '#909399', '2': '#E6A23C', '3': '#303133' }
@@ -148,6 +151,8 @@ export default {
       deviceForm: {},
       statusOptions: [{ label: '运行中', value: '0' }, { label: '待机', value: '1' }, { label: '维护中', value: '2' }, { label: '离线', value: '3' }],
       workshopStatusOptions: [{ label: '启用', value: '0' }, { label: '停用', value: '1' }],
+      // 负责人下拉候选：系统启用用户，昵称缺省时回退登录名（与设备台账页保持一致）
+      userOptions: [],
       deviceRules: {
         equipmentName: [{ required: true, message: '设备名称不能为空', trigger: 'blur' }],
         equipmentModelName: [{ required: true, message: '设备型号不能为空', trigger: 'blur' }]
@@ -182,6 +187,10 @@ export default {
     }
     this.workshopId = workshopId
     this.loading = true
+    // 负责人候选与主数据解耦：只加载启用用户，失败不阻塞孪生编辑页加载
+    listUser({ pageNum: 1, pageSize: 100, status: '0' }).then(res => {
+      this.userOptions = (res.rows || []).map(u => ({ userId: u.userId, nickName: u.nickName || u.userName }))
+    }).catch(() => {})
     Promise.all([
       getWorkshop(workshopId),
       listEquipment({ pageNum: 1, pageSize: 100, workshopId })
@@ -249,6 +258,8 @@ export default {
       this.workshopForm = { ...this.workshop }
       this.setSelection(null)
     },
+    // 选择负责人时同步冗余姓名字段（列表展示用）；清空时一并置空
+    handleManagerChange(userId) { const item = this.userOptions.find(u => u.userId === userId); this.workshopForm.workshopManager = item ? item.nickName : '' },
 
     /* ---------- 3D 场景 ---------- */
     initThree() {

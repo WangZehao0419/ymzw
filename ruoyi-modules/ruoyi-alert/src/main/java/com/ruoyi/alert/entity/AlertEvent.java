@@ -40,7 +40,7 @@ public class AlertEvent {
     @TableField("alert_type")
     private String alertType;
 
-    /** 告警等级: NORMAL/WARNING/SEVERE */
+    /** 告警等级: NORMAL/WARNING/IMPORTANT/SEVERE/CRITICAL */
     @TableField("alert_level")
     private String alertLevel;
 

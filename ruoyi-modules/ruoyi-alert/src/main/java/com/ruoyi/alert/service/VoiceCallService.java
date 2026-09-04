@@ -169,7 +169,9 @@ public class VoiceCallService {
             return "未知";
         }
         switch (level) {
+            case "CRITICAL": return "危急";
             case "SEVERE": return "严重";
+            case "IMPORTANT": return "重要";
             case "WARNING": return "预警";
             case "NORMAL": return "正常";
             default: return level;

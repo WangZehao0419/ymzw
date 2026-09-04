@@ -50,11 +50,14 @@ public class AlertEventController {
                               @RequestParam(defaultValue = "10") long size,
                               @RequestParam(required = false) String sensorCode,
                               @RequestParam(required = false) String alertLevel,
-                              @RequestParam(required = false) String alertStatus) {
+                              @RequestParam(required = false) String alertStatus,
+                              @RequestParam(required = false) String alertType) {
         LambdaQueryWrapper<AlertEvent> wrapper = new LambdaQueryWrapper<AlertEvent>()
                 .eq(StringUtils.hasText(sensorCode), AlertEvent::getSensorCode, sensorCode)
                 .eq(StringUtils.hasText(alertLevel), AlertEvent::getAlertLevel, alertLevel)
                 .eq(StringUtils.hasText(alertStatus), AlertEvent::getAlertStatus, alertStatus)
+                // alertType 筛选:预测页只看 PREDICT,普通告警页不传则全量(行为不变)
+                .eq(StringUtils.hasText(alertType), AlertEvent::getAlertType, alertType)
                 // 告警看板默认关心最新告警,按触发时间倒序
                 .orderByDesc(AlertEvent::getTriggerTime);
         Page<AlertEvent> p = alertEventMapper.selectPage(new Page<>(page, size), wrapper);

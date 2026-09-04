@@ -60,18 +60,8 @@ public final class TrendExtrapolator {
             return null;
         }
 
-        // 平滑:窗口 p 的滑动平均,只对 i>=p-1 有完整窗口
-        double[] sm = new double[n];
-        double sum = 0D;
-        for (int i = 0; i < n; i++) {
-            sum += window.getVal()[i];
-            if (i >= p) {
-                sum -= window.getVal()[i - p];
-            }
-            if (i >= p - 1) {
-                sm[i] = sum / p;
-            }
-        }
+        // 平滑:与页面展示同口径的公共方法(防两处实现漂移导致告警依据与曲线不一致)
+        double[] sm = smoothSeries(window, props);
 
         // 拟合段:有 onset 取 onset 之后的平滑点,否则取最近 300 点
         int from = p - 1;
@@ -161,6 +151,36 @@ public final class TrendExtrapolator {
             band.add(new double[]{ts, mid - halfWidth, mid, mid + halfWidth});
         }
         return new Result(aReal, b, r2, sigma, (int) Math.round(t1), breachTs, sm[n - 1], band);
+    }
+
+    /**
+     * 滑动平均平滑序列(公共口径:趋势拟合与页面平滑线共用同一实现,
+     * 防两处口径漂移导致"页面平滑线"与"告警判定依据"不一致)
+     *
+     * @param window 时序窗口
+     * @param props  配置(sinePeriod=滑动窗口)
+     * @return 长度=window.size() 的数组:前 sinePeriod-1 个位置为 Double.NaN
+     * (无完整窗口),其余为最近 sinePeriod 点均值,与原始点下标一一对应
+     */
+    public static double[] smoothSeries(SensorWindow window, PredictProperties props) {
+        int p = props.getSinePeriod();
+        int n = window.size();
+        double[] sm = new double[n];
+        // 前 p-1 个位置无完整窗口,填 NaN 让调用方显式跳过(而非误当 0 参与计算/展示)
+        for (int i = 0; i < Math.min(p - 1, n); i++) {
+            sm[i] = Double.NaN;
+        }
+        double sum = 0D;
+        for (int i = 0; i < n; i++) {
+            sum += window.getVal()[i];
+            if (i >= p) {
+                sum -= window.getVal()[i - p];
+            }
+            if (i >= p - 1) {
+                sm[i] = sum / p;
+            }
+        }
+        return sm;
     }
 
     /**

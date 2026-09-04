@@ -1,6 +1,7 @@
 package com.ruoyi.alert.event.listener;
 
 import com.ruoyi.alert.entity.AlertEvent;
+import com.ruoyi.alert.event.AlertEscalatedEvent;
 import com.ruoyi.alert.event.AlertTriggeredEvent;
 import com.ruoyi.alert.stream.AlertStreamConnectionPool;
 import lombok.RequiredArgsConstructor;
@@ -43,18 +44,37 @@ public class AlertPushListener {
     @EventListener
     @Order(10)
     public void onAlertTriggered(AlertTriggeredEvent event) {
+        AlertEvent alertEvent = event.getAlertEvent();
+        waitForIdBackfill(alertEvent);
+        connectionPool.broadcast(alertEvent);
+    }
+
+    /**
+     * 升级后的告警是既有记录(已有 id),无需等待落库回填,直接广播,
+     * 前端按同 id 就地更新该行;推送失败仍只记日志不影响主链路
+     */
+    @Async
+    @EventListener
+    @Order(10)
+    public void onAlertEscalated(AlertEscalatedEvent event) {
         try {
-            AlertEvent alert = event.getAlertEvent();
-            waitForIdBackfill(alert);
-            // 事件对象与落库监听器操作的是同一引用,等待后序列化即"落库后"的最新内容
-            connectionPool.broadcast(alert);
-            log.info("[Push] 告警已推送: id={}, code={}, level={}",
-                    alert.getId(), alert.getSensorCode(), alert.getAlertLevel());
+            connectionPool.broadcast(event.getAlertEvent());
         } catch (Exception e) {
             // 推送失败不影响主链路(落库/检测),仅记日志
-            log.error("[Push] 告警推送失败: {}", e.getMessage());
+            log.error("[Push] 告警升级推送失败: {}", e.getMessage());
         }
     }
+    /*
+    try {
+            AlertEvent alert = event.getAlertEvent();  // 取出告警实体
+            waitForIdBackfill(alert);  // 轮询等待落库监听器把自增 id 回填
+            connectionPool.broadcast(alert);  // 通过 NDJSON 长连接池广播给所有在线监控页面
+        } catch (Exception e) {
+            // 推送失败不影响主链路(落库/检测),仅记日志
+            log.error("[Push] 告警推送失败: {}", e.getMessage());  // 旁路失败唯一留痕，吞掉异常避免回灌检测主链路
+        }
+    */
+
 
     /**
      * 有界等待落库监听器把自增 id 回填到同一 AlertEvent 引用

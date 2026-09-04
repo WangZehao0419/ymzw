@@ -2,8 +2,9 @@ package com.ruoyi.alert.predict;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ruoyi.alert.entity.AlertEvent;
+import com.ruoyi.alert.entity.PredictAlert;
 import com.ruoyi.alert.event.AlertTriggeredEvent;
-import com.ruoyi.alert.mapper.AlertEventMapper;
+import com.ruoyi.alert.mapper.PredictAlertMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -42,7 +43,8 @@ public class PredictStateMachine {
     private final PredictProperties props;
     private final BaselineRegistry baselineRegistry;
     private final ApplicationEventPublisher eventPublisher;
-    private final AlertEventMapper alertEventMapper;
+    /** 预测告警独立落 predict_alert(D1),句柄更新必须同表命中,故不走 AlertEventMapper */
+    private final PredictAlertMapper predictAlertMapper;
     private final ObjectMapper objectMapper;
 
     /** 传感器状态缓存: key=sensorCode(内存态,单实例假设,与持续计数同风格) */
@@ -186,7 +188,9 @@ public class PredictStateMachine {
         boolean predictive = trend != null && trend.getT1Points() != null;
         alert.setAlertLevel(predictive ? "SEVERE" : "WARNING");
         alert.setAlertStatus("FIRING");
-        alert.setSensorValue(smoothedValue);
+        // 平滑值是滑动平均的原始浮点结果(如 49.998666...),传感器原始上报值本身
+        // 为两位小数;此处取两位与 L1 告警口径一致,避免展示/语音播报输出一长串小数
+        alert.setSensorValue(Math.round(smoothedValue * 100D) / 100D);
         alert.setTriggerTime(LocalDateTime.now());
         alert.setPredictedBreachTime(predictive
                 ? toLocalDateTime(trend.getPredictedBreachTimeMs()) : null);
@@ -217,7 +221,8 @@ public class PredictStateMachine {
         upd.setAlertLevel("SEVERE");
         upd.setPredictedBreachTime(toLocalDateTime(trend.getPredictedBreachTimeMs()));
         upd.setEvidence(buildEvidence(mad, cusum, trend));
-        alertEventMapper.updateById(upd);
+        // 句柄 id 来自 predict_alert 落库回填,更新须转 PredictAlert 同表命中(D1)
+        predictAlertMapper.updateById(PredictAlert.from(upd));
         log.info("[PREDICT] 告警升级为可预测(SEVERE): sensorCode={}, alertEventId={}, t1={}",
                 sensor.getSensorCode(), st.getAlertEventId(), trend.getT1Points());
     }
@@ -229,7 +234,8 @@ public class PredictStateMachine {
         AlertEvent upd = new AlertEvent();
         upd.setId(st.getAlertEventId());
         upd.setPredictedBreachTime(toLocalDateTime(trend.getPredictedBreachTimeMs()));
-        alertEventMapper.updateById(upd);
+        // 句柄 id 来自 predict_alert 落库回填,更新须转 PredictAlert 同表命中(D1)
+        predictAlertMapper.updateById(PredictAlert.from(upd));
     }
 
     /**
@@ -243,7 +249,8 @@ public class PredictStateMachine {
         upd.setId(st.getAlertEventId());
         upd.setAlertStatus("RESOLVED");
         upd.setResolveTime(LocalDateTime.now());
-        alertEventMapper.updateById(upd);
+        // 句柄 id 来自 predict_alert 落库回填,更新须转 PredictAlert 同表命中(D1)
+        predictAlertMapper.updateById(PredictAlert.from(upd));
         log.info("[PREDICT] 告警已恢复: sensorCode={}, alertEventId={}, reason={}",
                 sensorCode, st.getAlertEventId(), reason);
     }

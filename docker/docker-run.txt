@@ -1,3 +1,49 @@
+docker run -d \
+  --name mysql \
+  -p 3306:3306 \
+  -e MYSQL_ROOT_PASSWORD='123!@#QWer' \
+  -e TZ=Asia/Shanghai \
+  -v /opt/mysql/data:/var/lib/mysql \
+  -v /opt/mysql/conf:/etc/mysql/conf.d \
+  -v /opt/mysql/logs:/var/log/mysql \
+  mysql:8.0.46
+
+==================================================================
+
+# 1. 创建目录（data 和 conf 一起建）
+mkdir -p /opt/redis/{data,conf}
+# 2. 设置权限（uid 999）
+chown -R 999:999 /opt/redis
+
+cat > /opt/redis/conf/redis.conf <<'EOF'
+# 允许所有 IP 连接（生产环境建议改为 bind 指定网段）
+bind 0.0.0.0
+# 守护进程关闭（容器内必须为 no）
+daemonize no
+# 数据保存目录（容器内路径，即挂载的 /opt/redis/data）
+dir /data
+# 开启 AOF 持久化
+appendonly yes
+appendfsync everysec
+# RDB 快照保留
+save 900 1
+save 300 10
+save 60 10000
+# 密码
+#requirepass 你的密码
+EOF
+
+docker run -d \
+  --name redis \
+  -p 6379:6379 \
+  -e TZ=Asia/Shanghai \
+  -v /opt/redis/data:/data \
+  -v /opt/redis/conf/redis.conf:/usr/local/etc/redis/redis.conf \
+  redis:8.6.3 \
+  redis-server /usr/local/etc/redis/redis.conf
+
+===========================================================================
+
 docker run --name nacos-v2.5.3 `
     -e MODE=standalone `
     -e SPRING_DATASOURCE_PLATFORM=mysql `
@@ -10,6 +56,22 @@ docker run --name nacos-v2.5.3 `
     -p 8848:8848 `
     -p 9848:9848 `
     -d nacos/nacos-server:v2.5.3
+
+===========================================================================
+
+mkdir -p /opt/nginx/{conf,html,logs}
+
+docker run -d \
+  --name nginx \
+  -p 8001:8001 -p 8002:8002 -p 8003:8003 \
+  -e TZ=Asia/Shanghai \
+  --add-host=host.docker.internal:host-gateway \
+  -v /opt/nginx/conf/nginx.conf:/etc/nginx/nginx.conf \
+  -v /opt/nginx/html:/usr/share/nginx/html \
+  -v /opt/nginx/logs:/var/log/nginx \
+  nginx:1.30.4
+
+===========================================================================
 
 docker network create rocketmq
 docker run -d --name rmqnamesrv --network rocketmq -p 9876:9876 apache/rocketmq:5.3.2 sh mqnamesrv
@@ -30,6 +92,8 @@ docker run -d --name rocketmq-dashboard `
   -p 18082:8080 `
   -e "JAVA_OPTS=-Drocketmq.namesrv.addr=rmqnamesrv:9876" `
   apacherocketmq/rocketmq-dashboard:2.1.0
+
+===========================================================================
 
 docker run -d `
   --name emqx `

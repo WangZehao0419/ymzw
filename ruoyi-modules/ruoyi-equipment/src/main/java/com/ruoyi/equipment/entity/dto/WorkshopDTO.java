@@ -20,12 +20,6 @@ public class WorkshopDTO {
     private Integer id;
 
     /**
-     * 车间编号
-     */
-    @NotBlank(message = "车间编号不能为空")
-    private String workshopNo;
-
-    /**
      * 车间名称
      */
     @NotBlank(message = "车间名称不能为空")
@@ -37,7 +31,12 @@ public class WorkshopDTO {
     private String workshopLocation;
 
     /**
-     * 车间负责人
+     * 车间负责人用户ID（逻辑关联 sys_user.user_id）
+     */
+    private Integer workshopManagerId;
+
+    /**
+     * 车间负责人姓名（冗余显示，随用户选择覆盖）
      */
     private String workshopManager;
 

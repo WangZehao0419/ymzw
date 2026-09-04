@@ -50,7 +50,6 @@ export function changeEquipmentStatus(id, status) {
 
 export function listWorkshop(query) {
   const params = {
-    workshopNo: query.workshopNo || undefined,
     workshopName: query.workshopName || undefined,
     workshopStatus: query.workshopStatus === '' ? undefined : query.workshopStatus,
     page: query.pageNum || 1,

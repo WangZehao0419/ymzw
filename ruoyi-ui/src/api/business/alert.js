@@ -16,7 +16,9 @@ export function fetchAlertEvents(query) {
     size: query.pageSize || 10,
     sensorCode: query.sensorCode || undefined,
     alertLevel: query.alertLevel || undefined,
-    alertStatus: query.alertStatus || undefined
+    alertStatus: query.alertStatus || undefined,
+    // 告警类型透传：RULE=阈值告警，PREDICT=预测告警，用于故障预警页与预测性维护页分流
+    alertType: query.alertType || undefined
   }
   return request({ url: '/api/alert-events/page', method: 'get', params }).then(pageResult)
 }

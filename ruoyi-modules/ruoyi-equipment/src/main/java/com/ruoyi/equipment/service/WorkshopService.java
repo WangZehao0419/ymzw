@@ -36,15 +36,6 @@ public interface WorkshopService extends IRepository<Workshop> {
     WorkshopVO getDetailById(Integer id);
 
     /**
-     * 检查车间编号是否唯一
-     *
-     * @param workshopNo 车间编号
-     * @param excludeId  排除的车间ID（用于更新时排除自身）
-     * @return true-唯一，false-已存在
-     */
-    boolean checkWorkshopNoUnique(String workshopNo, Integer excludeId);
-
-    /**
      * 新增车间
      *
      * @param workshop 车间信息

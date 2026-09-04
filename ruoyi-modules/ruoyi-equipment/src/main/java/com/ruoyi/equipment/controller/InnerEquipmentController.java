@@ -50,6 +50,8 @@ public class InnerEquipmentController {
         dto.setEquipmentName(equipment.getEquipmentName());
         // 负责人未分配时为 null,属正常,由调用方判空
         dto.setEquipmentUserId(equipment.getEquipmentUserId());
+        // 负责人姓名冗余存储于设备表,与 ID 成对透传,null 同样属正常,由调用方判空
+        dto.setEquipmentUserName(equipment.getEquipmentUserName());
         return R.ok(dto);
     }
 

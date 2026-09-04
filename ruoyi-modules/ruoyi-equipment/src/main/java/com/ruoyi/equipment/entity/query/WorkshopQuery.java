@@ -24,11 +24,6 @@ public class WorkshopQuery {
     private Integer pageSize = 10;
 
     /**
-     * 车间编号（精确查询）
-     */
-    private String workshopNo;
-
-    /**
      * 车间名称（模糊查询）
      */
     private String workshopName;

@@ -1,6 +1,7 @@
 package com.ruoyi.alert.event.listener;
 
 import com.ruoyi.alert.entity.AlertEvent;
+import com.ruoyi.alert.event.AlertEscalatedEvent;
 import com.ruoyi.alert.event.AlertTriggeredEvent;
 import com.ruoyi.alert.service.MailNotifyService;
 import com.ruoyi.alert.service.VoiceCallService;
@@ -19,6 +20,7 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -43,6 +45,9 @@ public class AlertNotifyListener {
     private final MailNotifyService mailNotifyService;
     private final VoiceCallService voiceCallService;
 
+    /** 触达责任人的告警级别白名单:四级告警全放行(NORMAL 为恢复语义,不在此列) */
+    private static final Set<String> NOTIFY_LEVELS = Set.of("WARNING", "IMPORTANT", "SEVERE", "CRITICAL");
+
     /** 通知冷却: key=设备:传感器:级别 -> 上次放行时间戳(内存态,与检测防抖同模式,重启失效可接受) */
     private final Map<String, Long> notifyThrottle = new ConcurrentHashMap<>();
 
@@ -54,12 +59,37 @@ public class AlertNotifyListener {
     @EventListener
     @Order(20)
     public void onAlertTriggered(AlertTriggeredEvent event) {
+        // 预测告警是"将发生"而非已发生,仅页面/铃铛提示,不邮件不外呼(D4)
+        if ("PREDICT".equals(event.getAlertEvent().getAlertType())) {
+            return;
+        }
+        handleNotify(event.getAlertEvent());
+    }
+
+    /**
+     * 升级后等级变化,按新等级重新走责任人通知(严重告警值得再次触达);
+     * 节流 key 含级别,SEVERE 升级不会被 WARNING 的冷却挡住
+     */
+    @Async
+    @EventListener
+    @Order(20)
+    public void onAlertEscalated(AlertEscalatedEvent event) {
+        // 预测告警是"将发生"而非已发生,仅页面/铃铛提示,不邮件不外呼(D4)
+        if ("PREDICT".equals(event.getAlertEvent().getAlertType())) {
+            return;
+        }
+        handleNotify(event.getAlertEvent());
+    }
+
+    /**
+     * 通知主逻辑:级别门槛 → 冷却节流 → 查责任人 → 邮件/电话旁路触达
+     */
+    private void handleNotify(AlertEvent alert) {
         try {
-            AlertEvent alert = event.getAlertEvent();
-            // 级别门槛:NORMAL 恢复类事件不触达责任人
+            // 级别门槛:四级告警全放行,NORMAL 为恢复语义不触达责任人(null/未知一并拦截,防脏数据骚扰)
             String level = alert.getAlertLevel();
-            if (!"WARNING".equals(level) && !"SEVERE".equals(level)) {
-                log.debug("[Notify] 非预警/严重级别,跳过通知: level={}", level);
+            if (!NOTIFY_LEVELS.contains(level)) {
+                log.debug("[Notify] 非告警级别(含 NORMAL 恢复),跳过通知: level={}", level);
                 return;
             }
 

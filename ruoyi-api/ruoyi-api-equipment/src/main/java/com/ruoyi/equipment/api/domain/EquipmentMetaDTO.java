@@ -24,4 +24,9 @@ public class EquipmentMetaDTO
      * 设备归属用户ID
      */
     private Integer equipmentUserId;
+
+    /**
+     * 设备负责人姓名
+     */
+    private String equipmentUserName;
 }

@@ -55,7 +55,7 @@ public class PredictProperties {
     /** T1 阶段最大持续点数:超过则状态机升级(Task 5 状态机) */
     private int t1MaxPoints = 2400;
 
-    /** T1 退出延迟点数:连续恢复该点数才退出 T1,防抖(Task 5 状态机) */
+    /** T1 退出推后点数:DEGRADING 态 t1 较上次推后超过该点数则回 NORMAL(防幽灵告警) */
     private int t1DeferExitPoints = 600;
 
     /** AI 预测子配置 */

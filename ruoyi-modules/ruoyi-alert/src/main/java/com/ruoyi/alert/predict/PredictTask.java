@@ -88,6 +88,12 @@ public class PredictTask {
             }
             Baseline baseline = baselineRegistry.get(sensorCode);
             if (baseline == null) {
+                // 复位后基线重学需新数据攒够(窗口内复位后数据占比>=90%):
+                // 立即学会把残留的退化期数据学成基线,MAD/CUSUM 判定全部失真
+                if (!baselineRegistry.shouldLearn(sensorCode, window)) {
+                    log.debug("[PREDICT] 复位后新数据未攒够,跳过本轮: {}", sensorCode);
+                    return;
+                }
                 baseline = baselineRegistry.learn(sensorCode, window);
             }
 
@@ -95,13 +101,19 @@ public class PredictTask {
             MadDetector.Result mad = MadDetector.detect(window, baseline, props);
             CusumDetector.Result cusum = CusumDetector.detect(window, baseline, props);
             // L3 趋势外推:无启用阈值规则的传感器(如 VIB-001)只走 L2,不外推 t1
-            TrendExtrapolator.Result trend = extrapolateTrend(sensor, window, baseline, cusum);
+            // 规则一次查询,趋势外推与健康度评分共用
+            AlertRule rule = findRule(sensor);
+            TrendExtrapolator.Result trend = extrapolateTrend(rule, window, baseline, cusum);
             double smoothed = TrendExtrapolator.smoothLast(window, props);
+
+            // 健康度评分(0-100 连续量):与状态机正交,NORMAL 态也每轮计算落库,
+            // 其生命周期与趋势预测字段不同(回 NORMAL 清趋势残留、健康度仍更新)
+            double health = HealthScoreService.compute(baseline, smoothed, rule, mad, props);
 
             // 状态机推进:内部处理 PREDICT 告警发出/升级/幽灵退出,返回最新状态
             String status = stateMachine.advance(sensor, mad, cusum, trend, smoothed);
 
-            upsertSnapshot(sensor, status, cusum, trend);
+            upsertSnapshot(sensor, status, health, cusum, trend);
         } catch (Exception e) {
             // 单传感器异常只跳过本轮该传感器,单行 warn 不带堆栈
             log.warn("[PREDICT] 传感器处理异常,跳过本轮: sensorCode={}, error={}", sensorCode, e.getMessage());
@@ -109,18 +121,28 @@ public class PredictTask {
     }
 
     /**
-     * L3 趋势外推:查该传感器启用的阈值规则,有上限/下限才做外推
+     * 查该传感器启用的阈值规则(趋势外推与健康度评分共用)
+     * <p>
+     * 不用 one():同传感器多条启用规则时 one() 抛 TooManyResultsException,
+     * 会被 processSensor 的 catch 吞掉导致该传感器整轮检测中断,改取首条。
+     * </p>
+     */
+    private AlertRule findRule(SensorMetaDTO sensor) {
+        return ruleService.lambdaQuery()
+                .eq(AlertRule::getSensorId, sensor.getId())
+                .eq(AlertRule::getEnabled, 1)
+                .list().stream().findFirst().orElse(null);
+    }
+
+    /**
+     * L3 趋势外推:有上限/下限才做外推
      * <p>
      * 上限/下限同时配置时优先上限(模拟器退化场景为上漂越上限);
      * 拟合段起点取 CUSUM onset(劣化前数据混入会稀释劣化斜率)。
      * </p>
      */
-    private TrendExtrapolator.Result extrapolateTrend(SensorMetaDTO sensor, SensorWindow window,
+    private TrendExtrapolator.Result extrapolateTrend(AlertRule rule, SensorWindow window,
                                                       Baseline baseline, CusumDetector.Result cusum) {
-        AlertRule rule = ruleService.lambdaQuery()
-                .eq(AlertRule::getSensorId, sensor.getId())
-                .eq(AlertRule::getEnabled, 1)
-                .one();
         if (rule == null || (rule.getUpperLimit() == null && rule.getLowerLimit() == null)) {
             return null;
         }
@@ -134,14 +156,21 @@ public class PredictTask {
     }
 
     /**
-     * 落本轮快照(趋势相关字段无规则/未过显著性门时为 null,MP 非空更新保留旧值)
+     * 落本轮快照
+     * <p>
+     * NORMAL 态趋势字段必须清空:upsert 走 MP updateById 非空更新,字段为 null 时
+     * 保留库中旧值,幽灵退出/状态回落后残留的旧预测值会误导前端继续展示过期告警。
+     * 健康度例外:它是连续量,与状态机正交,NORMAL 态也有本轮计算值,
+     * 两条路径(updateById/lambdaUpdate)都更新而非清空——与趋势字段生命周期不同。
+     * </p>
      */
-    private void upsertSnapshot(SensorMetaDTO sensor, String status,
+    private void upsertSnapshot(SensorMetaDTO sensor, String status, double health,
                                 CusumDetector.Result cusum, TrendExtrapolator.Result trend) {
         PredictResult result = new PredictResult();
         result.setSensorCode(sensor.getSensorCode());
         result.setEquipmentId(sensor.getEquipmentId());
         result.setStatus(status);
+        result.setHealthScore(health);
         result.setSlope(trend == null ? null : trend.getB());
         result.setT1Points(trend == null ? null : trend.getT1Points());
         result.setPredictedBreachTime(trend != null && trend.getT1Points() != null
@@ -150,6 +179,36 @@ public class PredictTask {
         result.setBandJson(toBandJson(trend));
         // 显式赋值;MyMetaObjectHandler 的 strict 填充不会覆盖非空值
         result.setUpdateTime(LocalDateTime.now());
+        if ("NORMAL".equals(status)) {
+            // NORMAL 态无有效预测语义:insert 路径同样不落趋势字段,保证两条路径口径一致
+            // (健康度不在清空之列:所有状态每轮都有效)
+            result.setSlope(null);
+            result.setT1Points(null);
+            result.setPredictedBreachTime(null);
+            result.setOnsetTime(null);
+            result.setBandJson(null);
+        }
+        PredictResult existing = predictResultService.lambdaQuery()
+                .eq(PredictResult::getSensorCode, sensor.getSensorCode())
+                .one();
+        if (existing != null && "NORMAL".equals(status)) {
+            // 已存在记录回 NORMAL:lambdaUpdate 显式 set null 清掉残留旧值
+            // (updateById 非空更新清不掉;记录不存在时无残留,走下方 upsert 插入即可)
+            // 健康度显式更新为本轮值而非 set null:清掉会回退成 null 误导前端按缺数据处理
+            predictResultService.lambdaUpdate()
+                    .eq(PredictResult::getSensorCode, sensor.getSensorCode())
+                    .set(PredictResult::getSlope, null)
+                    .set(PredictResult::getT1Points, null)
+                    .set(PredictResult::getPredictedBreachTime, null)
+                    .set(PredictResult::getOnsetTime, null)
+                    .set(PredictResult::getBandJson, null)
+                    .set(PredictResult::getStatus, "NORMAL")
+                    .set(PredictResult::getHealthScore, health)
+                    .set(PredictResult::getEquipmentId, sensor.getEquipmentId())
+                    .set(PredictResult::getUpdateTime, LocalDateTime.now())
+                    .update();
+            return;
+        }
         predictResultService.upsert(result);
     }
 

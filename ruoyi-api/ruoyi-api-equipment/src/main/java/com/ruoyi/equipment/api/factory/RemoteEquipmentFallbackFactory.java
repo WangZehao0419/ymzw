@@ -55,6 +55,13 @@ public class RemoteEquipmentFallbackFactory implements FallbackFactory<RemoteEqu
                 log.warn("获取传感器历史窗口数据降级返回空列表, sensorCode={}, points={}", sensorCode, points);
                 return R.ok(Collections.emptyList());
             }
+
+            @Override
+            public R<Void> resetDegradation(Integer equipmentId, String source)
+            {
+                // 与查询类降级不同:复位是指令下发,降级必须返回 fail 而非 ok,调用方据此走复位失败分支
+                return R.fail("维护复位指令下发失败:" + throwable.getMessage());
+            }
         };
     }
 }

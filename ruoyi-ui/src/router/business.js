@@ -71,39 +71,48 @@ export const businessRoutes = [
         path: 'warning',
         component: () => import('@/views/machine/alert/warning'),
         name: 'BusinessWarning',
-        meta: { title: '故障预警', icon: 'message', businessType: 'warning' }
+        meta: { title: '告警记录', icon: 'message', businessType: 'warning' }
+      },
+      {
+        // 预测性维护：MAD/CUSUM 检测 + 趋势外推, 在真实越界前发 PREDICT 告警
+        path: 'predict',
+        component: () => import('@/views/machine/alert/predict'),
+        name: 'BusinessPredict',
+        meta: { title: '预测性维护', icon: 'chart' }
       },
 
+      // 维保工单已接真实后端(工单自动生成/流转/完成联动维护复位)
       {
         path: 'work-order',
-        component: () => import('@/views/machine/operations'),
+        component: () => import('@/views/machine/workorder'),
         name: 'BusinessWorkOrder',
-        meta: { title: '维保工单', icon: 'form', businessType: 'order' }
+        meta: { title: '维保工单', icon: 'form' }
       },
+      // 维护计划已接真实后端(定时触发自动生成维保工单/暂停恢复)
       {
         path: 'maintenance-plan',
-        component: () => import('@/views/machine/operations'),
+        component: () => import('@/views/machine/maintenanceplan'),
         name: 'BusinessMaintenancePlan',
         meta: { title: '维护计划', icon: 'date', businessType: 'plan' }
       },
-      {
-        path: 'report',
-        component: () => import('@/views/machine/report/overview'),
-        name: 'BusinessReport',
-        meta: { title: '统计报表', icon: 'chart' }
-      },
-      {
-        path: 'inspection-log',
-        component: () => import('@/views/machine/operations'),
-        name: 'BusinessInspectionLog',
-        meta: { title: '检测日志', icon: 'log', businessType: 'inspectionLog' }
-      },
-      {
-        path: 'device-log',
-        component: () => import('@/views/machine/operations'),
-        name: 'BusinessDeviceLog',
-        meta: { title: '设备日志', icon: 'log', businessType: 'deviceLog' }
-      }
+      // {
+      //   path: 'report',
+      //   component: () => import('@/views/machine/report/overview'),
+      //   name: 'BusinessReport',
+      //   meta: { title: '统计报表', icon: 'chart' }
+      // },
+      // {
+      //   path: 'inspection-log',
+      //   component: () => import('@/views/machine/operations'),
+      //   name: 'BusinessInspectionLog',
+      //   meta: { title: '检测日志', icon: 'log', businessType: 'inspectionLog' }
+      // },
+      // {
+      //   path: 'device-log',
+      //   component: () => import('@/views/machine/operations'),
+      //   name: 'BusinessDeviceLog',
+      //   meta: { title: '设备日志', icon: 'log', businessType: 'deviceLog' }
+      // }
     ]
   }
 ]

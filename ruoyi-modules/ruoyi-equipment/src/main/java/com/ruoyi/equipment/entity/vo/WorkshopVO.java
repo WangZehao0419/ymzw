@@ -21,11 +21,6 @@ public class WorkshopVO {
     private Integer id;
 
     /**
-     * 车间编号
-     */
-    private String workshopNo;
-
-    /**
      * 车间名称
      */
     private String workshopName;
@@ -36,7 +31,12 @@ public class WorkshopVO {
     private String workshopLocation;
 
     /**
-     * 车间负责人
+     * 车间负责人用户ID（编辑回显负责人下拉依赖）
+     */
+    private Integer workshopManagerId;
+
+    /**
+     * 车间负责人姓名（冗余显示）
      */
     private String workshopManager;
 

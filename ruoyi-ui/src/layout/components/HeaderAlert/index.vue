@@ -8,9 +8,10 @@
       <div v-if="alertList.length === 0" class="alert-empty"><i class="el-icon-inbox"></i><br>暂无告警</div>
       <div v-else>
         <div v-for="item in alertList" :key="item.id" class="alert-item" @click="markRead(item)">
-          <el-tag size="mini" :type="levelMeta(item.alertLevel).type" class="alert-tag">{{ levelMeta(item.alertLevel).label }}</el-tag>
+          <el-tag v-if="item.alertType === 'PREDICT'" size="mini" type="warning" effect="dark" class="alert-tag alert-tag-predict">预测</el-tag>
+          <el-tag v-else size="mini" :type="levelMeta(item.alertLevel).type" :effect="levelMeta(item.alertLevel).effect" class="alert-tag">{{ levelMeta(item.alertLevel).label }}</el-tag>
           <span class="alert-item-title">{{ item.sensorName || item.sensorCode }}</span>
-          <span class="alert-item-value">{{ item.sensorValue }}</span>
+          <span class="alert-item-value">{{ formatValue(item.sensorValue) }}</span>
           <span class="alert-item-time">{{ formatTime(item.triggerTime) }}</span>
         </div>
       </div>
@@ -92,9 +93,32 @@ export default {
     onAlertLeave() {
       this.alertLeaveTimer = setTimeout(() => { this.alertVisible = false }, 150)
     },
-    // 流式新告警：计入未读、顶部插入（超 20 条截断），循环播报引擎接管语音，SEVERE 级别弹通知
+    // 流式告警：新告警计入未读、顶部插入；同 id 再推为升级推送（后端只升级不重建），就地替换该条
     handleStreamAlert(alert) {
       if (!alert || alert.id === undefined || alert.id === null) return
+      // 列表已有同 id：升级推送分支，就地替换等级/数值/时间，避免同传感器重复占两条
+      const idx = this.alertList.findIndex(item => item.id === alert.id)
+      if (idx > -1) {
+        this.alertList.splice(idx, 1, { ...alert })
+        // 已读告警升级须重新触达（与后端 ACKED→FIRING 语义一致）；已在未读则不重复入列，防角标虚增
+        if (!this.unreadIdList.includes(alert.id)) {
+          this.unreadIdList.push(alert.id)
+        }
+        // 游标归零并(重)启动引擎：下一条即播升级后的告警，buildAlertText 从列表取值自动用新等级"严重告警"
+        this._speakCursor = 0
+        this.startSpeakLoop()
+        // 严重/危急才弹右下角通知:低等级靠铃铛+播报触达,避免通知风暴
+        if (alert.alertLevel === 'SEVERE' || alert.alertLevel === 'CRITICAL') {
+          // 升级通知与新告警通知文案区分：用户已见过该告警，重点是"级别变了"而非"新告警"
+          this.$notify({
+            title: '告警升级',
+            message: `${alert.sensorName || alert.sensorCode} 数值 ${alert.sensorValue} 超限，级别已升级为${alert.alertLevel === 'CRITICAL' ? '危急' : '严重'}`,
+            type: 'error',
+            duration: 5000
+          })
+        }
+        return
+      }
       this.unreadIdList.push(alert.id)
       this.alertList.unshift({ ...alert })
       if (this.alertList.length > 20) {
@@ -104,10 +128,13 @@ export default {
       // 当前条播完后下一条就轮到新告警（引擎未活跃时 startSpeakLoop 内部也会归零，双保险）
       this._speakCursor = 0
       this.startSpeakLoop()
-      if (alert.alertLevel === 'SEVERE') {
+      // 严重/危急才弹右下角通知:低等级靠铃铛+播报触达,避免通知风暴
+      if (alert.alertLevel === 'SEVERE' || alert.alertLevel === 'CRITICAL') {
+        // PREDICT 的 SEVERE 是"预测即将越界",文案与实测越界区分(预测链路不产 CRITICAL,危急分支恒走实测文案)
+        const isPredict = alert.alertType === 'PREDICT'
         this.$notify({
-          title: '严重告警',
-          message: `${alert.sensorName || alert.sensorCode} 数值 ${alert.sensorValue} 超限`,
+          title: isPredict ? '预测严重告警' : (alert.alertLevel === 'CRITICAL' ? '危急告警' : '严重告警'),
+          message: `${alert.sensorName || alert.sensorCode} 数值 ${this.formatValue(alert.sensorValue)}${isPredict ? '，预测即将越界' : ' 超限'}`,
           type: 'error',
           duration: 5000
         })
@@ -175,13 +202,20 @@ export default {
         this.stopSpeakLoop()
       }
     },
-    // 播报文案:设备+传感器+级别+数值;数值原样播(82.47 播"八十二点四七",四舍五入会丢精度误导判断)
+    // 播报文案:设备+传感器+级别+数值;数值统一两位小数(PREDICT 平滑值带全精度,
+    // 原样播会读出一长串数字,听感差且无信息量;传感器原始值本身也是两位小数)
+    // PREDICT 类型加"预测"前缀:与实时告警区分,听众能感知"这是将要发生,不是已发生"
     buildAlertText(alert) {
-      const levelText = { SEVERE: '严重', WARNING: '预警', NORMAL: '正常' }[alert.alertLevel] || alert.alertLevel || ''
+      const levelText = { CRITICAL: '危急', SEVERE: '严重', IMPORTANT: '重要', WARNING: '预警', NORMAL: '正常' }[alert.alertLevel] || alert.alertLevel || ''
       const equipment = alert.equipmentName || (alert.equipmentId ? '设备' + alert.equipmentId : '未知设备')
       const sensor = alert.sensorName || alert.sensorCode || '未知传感器'
-      const value = alert.sensorValue == null ? '' : String(alert.sensorValue)
-      return `${equipment}，${sensor}，出现${levelText}告警，当前数值 ${value}`
+      const value = alert.sensorValue == null ? '' : this.formatValue(alert.sensorValue)
+      const prefix = alert.alertType === 'PREDICT' ? '预测' : ''
+      return `${equipment}，${sensor}，出现${prefix}${levelText}告警，当前数值 ${value}`
+    },
+    // 数值展示统一两位小数:兜住历史已落库的全精度平滑值(源头已同步修为两位)
+    formatValue(v) {
+      return v == null ? '-' : Number(v).toFixed(2)
     },
     // 点击单条告警视为已读:从未读集合移除,角标-1,仍保留在列表(已读不是删除,历史可回看);
     // 全部已读后停止循环播报
@@ -194,7 +228,8 @@ export default {
         this.stopSpeakLoop()
       }
       this.alertVisible = false
-      this.$router.push('/machine-business/warning')
+      // 按告警类型分流:预测告警去预测性维护页,实时告警去故障预警页
+      this.$router.push(item.alertType === 'PREDICT' ? '/machine-business/predict' : '/machine-business/warning')
     },
     // 清空列表并重置未读集合（仅前端态，不做已读持久化）：列表没了播报也无从取条，同步停引擎
     clearAlerts() {
@@ -202,8 +237,15 @@ export default {
       this.alertList = []
       this.unreadIdList = []
     },
+    // 四级等级标签映射:同色系内 dark 实底强于 light 浅底区分相邻档(重要>预警、危急>严重),红色系整体重于橙色系区分高低档
     levelMeta(level) {
-      return { SEVERE: { label: '严重', type: 'danger' }, WARNING: { label: '预警', type: 'warning' }, NORMAL: { label: '正常', type: 'info' } }[level] || { label: level || '-', type: 'info' }
+      return {
+        CRITICAL: { label: '危急', type: 'danger', effect: 'dark' },
+        SEVERE: { label: '严重', type: 'danger', effect: 'light' },
+        IMPORTANT: { label: '重要', type: 'warning', effect: 'dark' },
+        WARNING: { label: '预警', type: 'warning', effect: 'light' },
+        NORMAL: { label: '正常', type: 'info', effect: 'light' }
+      }[level] || { label: level || '-', type: 'info', effect: 'light' }
     },
     // 时间格式化（仅时分秒）：兼容 ISO(带T)/普通字符串/数组(LocalDateTime Jackson 序列化)三种格式
     formatTime(time) {
@@ -284,6 +326,12 @@ export default {
 .alert-popover .alert-item:last-child { border-bottom: none; }
 .alert-popover .alert-item:hover { background: #f7f9fb; }
 .alert-popover .alert-tag { flex-shrink: 0; }
+// PREDICT 预测标签:橙色实底(warning+dark),与红色实时告警一眼区分
+.alert-popover .alert-tag-predict {
+  background: #e6a23c;
+  border-color: #e6a23c;
+  color: #fff;
+}
 .alert-popover .alert-item-title {
   flex: 1;
   font-size: 12px;
