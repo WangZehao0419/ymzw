@@ -55,37 +55,39 @@ public class AlertDetectionService {
      * 对单个数据点做 L1 规则判定
      */
     public void detect(SensorDataReceivedEvent event) {
-//        传感器id
+        // 传感器id
         Integer sensorId = event.getSensorId();
         if (sensorId == null) {
             return;
         }
-//        告警规则
+        // 告警规则
         List<AlertRule> rules = findRules(sensorId);
         if (rules == null || rules.isEmpty()) {
             return;
         }
-//        传感器数值
+        // 传感器数据
         double sensorValue = event.getSensorValue();
+
         for (AlertRule rule : rules) {
-//            判断是否越界
+            // 判断是否越界
             String breachReason = breachReason(rule, sensorValue);
             if (breachReason == null) {
-//                未越界
+                // 未越界
                 sustainCounter.remove(rule.getId());
                 continue;
             }
 
-//            已越界
+            // 已越界
+            // 计数+1
             Integer count = sustainCounter.merge(rule.getId(), 1, Integer::sum);
-//            规则越界次数
+            // 获取触发阈值
             Integer need = rule.getSustainPoints();
 
-            if (count>=need) {
+            // 判断是否触发告警
+            if (count >= need) {
                 sustainCounter.remove(rule.getId());
                 decideAlert(event, rule, sensorValue, breachReason, count);
             }
-
         }
     }
 

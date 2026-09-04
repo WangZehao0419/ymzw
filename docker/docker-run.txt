@@ -74,17 +74,22 @@ docker run -d \
 ===========================================================================
 
 docker network create rocketmq
-docker run -d --name rmqnamesrv --network rocketmq -p 9876:9876 apache/rocketmq:5.3.2 sh mqnamesrv
+docker run -d --name rmqnamesrv --network rocketmq -p 9876:9876 -e "JAVA_OPT_EXT=-Xms256m -Xmx256m" apache/rocketmq:5.3.2 sh mqnamesrv
 docker logs -f rmqnamesrv
-docker run -d --name rmqbroker `
-  --network rocketmq `
-  -p 10912:10912 -p 10911:10911 -p 10909:10909 `
-  -p 18080:8080 -p 18081:8081 `
-  -e "NAMESRV_ADDR=rmqnamesrv:9876" `
-  -v E:\Docker\rocketmq\conf\broker.conf:/home/rocketmq/rocketmq-5.3.2/conf/broker.conf `
-  -v E:\Docker\rocketmq\store:/home/rocketmq/store `
-  -v E:\Docker\rocketmq\logs:/home/rocketmq/logs `
-  apache/rocketmq:5.3.2 sh mqbroker --enable-proxy `
+# 可删除-p 10912:10912 -p 18080:8080
+chmod -R 777 /opt/rocketmq/store /opt/rocketmq/logs
+chmod 666 /opt/rocketmq/conf/broker.conf
+docker run -d \
+  --name rmqbroker \
+  --network rocketmq \
+  --memory 1g \
+  -p 10911:10911 -p 10909:10909 -p 18081:8081 -p 10912:10912 -p 18080:8080\
+  -e "NAMESRV_ADDR=rmqnamesrv:9876" \
+  -e "JAVA_OPT_EXT=-Xms512m -Xmx512m -Xmn256m" \
+  -v /opt/rocketmq/conf/broker.conf:/home/rocketmq/rocketmq-5.3.2/conf/broker.conf \
+  -v /opt/rocketmq/store:/home/rocketmq/store \
+  -v /opt/rocketmq/logs:/home/rocketmq/logs \
+  apache/rocketmq:5.3.2 sh mqbroker --enable-proxy \
   -c /home/rocketmq/rocketmq-5.3.2/conf/broker.conf
 docker exec -it rmqbroker bash -c "tail -n 10 /home/rocketmq/logs/rocketmqlogs/proxy.log"
 docker run -d --name rocketmq-dashboard `
@@ -95,13 +100,28 @@ docker run -d --name rocketmq-dashboard `
 
 ===========================================================================
 
-docker run -d `
-  --name emqx `
-  --hostname emqx.local `
-  -e EMQX_NODE_NAME=emqx@emqx.local `
-  -e TZ=Asia/Shanghai `
-  -p 1883:1883 -p 8083:8083 -p 8084:8084 -p 8883:8883 -p 18083:18083 `
-  -v E:\Docker\emqx\data:/opt/emqx/data `
-  -v E:\Docker\emqx\log:/opt/emqx/log `
-  emqx/emqx:5.8.9
+mkdir -p /opt/emqx/data /opt/emqx/log
+chmod -R 777 /opt/emqx/data /opt/emqx/log
 # 可删除-p 8083:8083 -p 8084:8084 -p 8883:8883
+docker run -d \
+  --name emqx \
+  --hostname emqx.local \
+  -e EMQX_NODE_NAME=emqx@emqx.local \
+  -e TZ=Asia/Shanghai \
+  -p 1883:1883 -p 18083:18083 \
+  -v /opt/emqx/data:/opt/emqx/data \
+  -v /opt/emqx/log:/opt/emqx/log \
+  emqx/emqx:5.8.9
+
+===========================================================================
+
+mkdir -p /opt/tdengine/data /opt/tdengine/log
+chmod -R 777 /opt/tdengine/data /opt/tdengine/log
+docker run -d \
+  --name tdengine \
+  -e TZ=Asia/Shanghai \
+  -p 6030:6030 -p 6041:6041 -p 6060:6060 \
+  -v /opt/tdengine/data:/var/lib/taos \
+  -v /opt/tdengine/log:/var/log/taos \
+  -e TAOS_ROOT_PASSWORD='123!@#QWer' \
+  tdengine/tdengine:3.3.6.13
