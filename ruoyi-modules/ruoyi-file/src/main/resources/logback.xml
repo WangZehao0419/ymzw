@@ -61,6 +61,8 @@
 	<logger name="com.ruoyi" level="info" />
 	<!-- Spring日志级别控制  -->
 	<logger name="org.springframework" level="warn" />
+    <!-- nacos日志级别控制  -->
+    <logger name="com.alibaba.nacos.client.config" level="WARN" />
 
 	<root level="info">
 		<appender-ref ref="console" />

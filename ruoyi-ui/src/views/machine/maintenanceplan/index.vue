@@ -56,12 +56,6 @@
       <el-table-column label="上次触发时间" prop="lastFireTime" width="165" align="center">
         <template slot-scope="scope">{{ formatTime(scope.row.lastFireTime) }}</template>
       </el-table-column>
-      <el-table-column label="负责人" prop="assigneeName" width="100" align="center">
-        <template slot-scope="scope">
-          <span v-if="scope.row.assigneeName">{{ scope.row.assigneeName }}</span>
-          <span v-else class="assignee-empty">待指派</span>
-        </template>
-      </el-table-column>
       <el-table-column label="状态" prop="status" width="90" align="center">
         <template slot-scope="scope"><el-tag :type="statusMeta(scope.row.status).type">{{ statusMeta(scope.row.status).label }}</el-tag></template>
       </el-table-column>
@@ -117,11 +111,6 @@
         <el-form-item label="维护内容" prop="content">
           <el-input v-model="form.content" type="textarea" :rows="3" placeholder="请填写维护内容（如清洁、润滑、紧固、校准项）" />
         </el-form-item>
-        <el-form-item label="负责人" prop="assigneeId">
-          <el-select v-model="form.assigneeId" placeholder="请选择负责人（可不选）" clearable filterable style="width:100%">
-            <el-option v-for="item in userOptions" :key="item.userId" :label="item.nickName" :value="item.userId" />
-          </el-select>
-        </el-form-item>
       </el-form>
       <div slot="footer" class="dialog-footer">
         <el-button type="primary" @click="submitForm">确 定</el-button>
@@ -134,7 +123,6 @@
 <script>
 import { fetchMaintenancePlanPage, addMaintenancePlan, updateMaintenancePlan, pauseMaintenancePlan, resumeMaintenancePlan, delMaintenancePlan } from '@/api/business/maintenanceplan'
 import { listEquipment } from '@/api/business/machine'
-import { listUser } from '@/api/system/user'
 
 export default {
   name: 'BusinessMaintenancePlan',
@@ -160,7 +148,6 @@ export default {
       maintenanceTypeOptions: ['日常保养', '一级保养', '二级保养', '精度校准', '润滑保养'],
       queryParams: { pageNum: 1, pageSize: 10, status: '', repeatType: '', keyword: '' },
       equipmentOptions: [],
-      userOptions: [],
       open: false,
       title: '',
       form: {},
@@ -219,9 +206,7 @@ export default {
         fireTime: '',
         fireDay: 1,
         fireDate: '',
-        assigneeId: undefined,
-        assigneeName: '',
-        // 编辑时回填保留原状态，新建时留空交由后端默认启用
+        // 编辑时回填保留原状态（PAUSED 用于弹窗警示条），新建时留空交由后端默认启用
         status: undefined
       }
       this.resetForm('form')
@@ -232,12 +217,6 @@ export default {
       listEquipment({ pageNum: 1, pageSize: 100 }).then(res => {
         this.equipmentOptions = res.rows || []
       }).catch(() => {})
-    },
-    // 只加载正常状态用户作为负责人候选；每次打开弹窗前重载，保证新增用户可选（与工单页口径一致）
-    loadUserOptions() {
-      listUser({ pageNum: 1, pageSize: 100, status: '0' }).then(res => {
-        this.userOptions = res.rows.map(u => ({ userId: u.userId, nickName: u.nickName || u.userName }))
-      })
     },
     // 选择设备后同步设备名称，提交时冗余携带（后端列表展示用，与传感器管理同口径）
     handleEquipmentChange(val) {
@@ -256,14 +235,12 @@ export default {
     handleAdd() {
       this.reset()
       this.loadEquipmentOptions()
-      this.loadUserOptions()
       this.title = '新建维护计划'
       this.open = true
       this.$nextTick(() => { this.$refs.form && this.$refs.form.clearValidate() })
     },
     handleUpdate(row) {
       this.loadEquipmentOptions()
-      this.loadUserOptions()
       // 回填：fireTime 规整为 "HH:mm" 适配 el-time-picker 的 value-format
       this.form = {
         id: row.id,
@@ -276,8 +253,6 @@ export default {
         fireTime: this.normalizeTime(row.fireTime),
         fireDay: row.fireDay || 1,
         fireDate: this.normalizeDate(row.fireDate),
-        assigneeId: row.assigneeId || undefined,
-        assigneeName: row.assigneeName || '',
         status: row.status
       }
       this.title = '编辑维护计划'
@@ -287,8 +262,7 @@ export default {
     submitForm() {
       this.$refs.form.validate(valid => {
         if (!valid) return
-        // 姓名/设备名随 id 冗余提交，后端列表展示（与工单指派同口径）；fireTime 提交 "HH:mm"（后端 LocalTime 接受）
-        const user = this.userOptions.find(u => u.userId === this.form.assigneeId)
+        // 设备名随 id 冗余提交，后端列表展示（与传感器管理同口径）；fireTime 提交 "HH:mm"（后端 LocalTime 接受）
         const data = {
           id: this.form.id,
           planName: this.form.planName,
@@ -300,8 +274,6 @@ export default {
           fireTime: this.form.fireTime,
           fireDay: this.form.repeatType === 'MONTHLY' ? this.form.fireDay : null,
           fireDate: this.form.repeatType === 'ONCE' ? this.form.fireDate : null,
-          assigneeId: this.form.assigneeId || null,
-          assigneeName: user ? user.nickName : '',
           status: this.form.status || undefined
         }
         if (data.id) {
@@ -404,12 +376,6 @@ export default {
 </script>
 
 <style lang="scss" scoped>
-// 未指派负责人的占位：红色高亮提示待指派
-.assignee-empty {
-  color: #f56c6c;
-  font-weight: 600;
-}
-
 // 启用中计划的下次触发时间：高亮提醒即将执行
 .next-fire {
   color: #409eff;

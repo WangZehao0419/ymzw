@@ -1,3 +1,5 @@
+mkdir -p /opt/mysql/{data,conf,logs}
+chown -R 999:999 /opt/mysql/{data,conf,logs}
 docker run -d \
   --name mysql \
   -p 3306:3306 \
@@ -44,18 +46,31 @@ docker run -d \
 
 ===========================================================================
 
-docker run --name nacos-v2.5.3 `
-    -e MODE=standalone `
-    -e SPRING_DATASOURCE_PLATFORM=mysql `
-    -e MYSQL_SERVICE_HOST=host.docker.internal `
-    -e MYSQL_SERVICE_PORT=3306 `
-    -e MYSQL_SERVICE_DB_NAME=nacos `
-    -e MYSQL_SERVICE_USER=root `
-    -e MYSQL_SERVICE_PASSWORD=123!@#QWer `
-    -e MYSQL_SERVICE_DB_PARAM="characterEncoding=utf8&connectTimeout=1000&socketTimeout=3000&autoReconnect=true&useUnicode=true&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true" `
-    -p 8848:8848 `
-    -p 9848:9848 `
+docker run --name nacos \
+    -e MODE=standalone \
+    -e SPRING_DATASOURCE_PLATFORM=mysql \
+    -e MYSQL_SERVICE_HOST=host.docker.internal \
+    -e MYSQL_SERVICE_PORT=3306 \
+    -e MYSQL_SERVICE_DB_NAME=nacos \
+    -e MYSQL_SERVICE_USER=root \
+    -e MYSQL_SERVICE_PASSWORD='123!@#QWer' \
+    -e 'MYSQL_SERVICE_DB_PARAM=characterEncoding=utf8&connectTimeout=1000&socketTimeout=3000&autoReconnect=true&useUnicode=true&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true' \
+    -p 8848:8848 \
+    -p 9848:9848 \
     -d nacos/nacos-server:v2.5.3
+docker run -d --name nacos \
+  --add-host host.docker.internal:host-gateway \
+  -p 8848:8848 -p 9848:9848 \
+  -e MODE=standalone \
+  -e SPRING_DATASOURCE_PLATFORM=mysql \
+  -e MYSQL_SERVICE_HOST=host.docker.internal \
+  -e MYSQL_SERVICE_PORT=3306 \
+  -e MYSQL_SERVICE_DB_NAME=nacos \
+  -e MYSQL_SERVICE_USER=root \
+  -e MYSQL_SERVICE_PASSWORD='123!@#QWer' \
+  -e MYSQL_SERVICE_DB_PARAM="characterEncoding=utf8&connectTimeout=1000&socketTimeout=3000&autoReconnect=true&useUnicode=true&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true" \
+  -e NACOS_AUTH_ENABLE=false \
+  nacos/nacos-server:v2.5.3
 
 ===========================================================================
 
@@ -76,14 +91,30 @@ docker run -d \
 docker network create rocketmq
 docker run -d --name rmqnamesrv --network rocketmq -p 9876:9876 -e "JAVA_OPT_EXT=-Xms256m -Xmx256m" apache/rocketmq:5.3.2 sh mqnamesrv
 docker logs -f rmqnamesrv
-# 可删除-p 10912:10912 -p 18080:8080
-chmod -R 777 /opt/rocketmq/store /opt/rocketmq/logs
+mkdir -p /opt/rocketmq/{store,logs,conf}
+chmod -R 777 /opt/rocketmq/store /opt/rocketmq/logs /opt/rocketmq/conf
+# 写入配置文件（覆盖原有内容）
+cat > /opt/rocketmq/conf/broker.conf <<'EOF'
+brokerClusterName=DefaultCluster
+brokerName=broker-a
+brokerId=0
+deleteWhen=04
+fileReservedTime=48
+brokerRole=ASYNC_MASTER
+flushDiskType=ASYNC_FLUSH
+# 关键：让 broker 注册成 127.0.0.1，宿主机 Java 客户端才能直连(否则注册容器内网IP连不上)
+brokerIP1=127.0.0.1
+listenPort=10911
+autoCreateTopicEnable=true
+autoCreateSubscriptionGroup=true
+EOF
 chmod 666 /opt/rocketmq/conf/broker.conf
+# 可删除-p 10912:10912 -p 18080:8080
 docker run -d \
   --name rmqbroker \
   --network rocketmq \
   --memory 1g \
-  -p 10911:10911 -p 10909:10909 -p 18081:8081 -p 10912:10912 -p 18080:8080\
+  -p 10911:10911 -p 10909:10909 -p 18081:8081 \
   -e "NAMESRV_ADDR=rmqnamesrv:9876" \
   -e "JAVA_OPT_EXT=-Xms512m -Xmx512m -Xmn256m" \
   -v /opt/rocketmq/conf/broker.conf:/home/rocketmq/rocketmq-5.3.2/conf/broker.conf \
@@ -125,3 +156,12 @@ docker run -d \
   -v /opt/tdengine/log:/var/log/taos \
   -e TAOS_ROOT_PASSWORD='123!@#QWer' \
   tdengine/tdengine:3.3.6.13
+
+===========================================================================
+
+ docker run -d \
+   --name qdrant \
+   -p 6333:6333 \
+   -p 6334:6334 \
+   -v /opt/qdrant/storage:/qdrant/storage \
+   qdrant/qdrant

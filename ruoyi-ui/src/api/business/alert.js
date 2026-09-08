@@ -23,26 +23,30 @@ export function fetchAlertEvents(query) {
   return request({ url: '/api/alert-events/page', method: 'get', params }).then(pageResult)
 }
 
-// 分页查询告警规则
+// 分页查询告警阈值
 export function listAlertRules(query) {
   const params = {
     page: query.pageNum || 1,
-    size: query.pageSize || 10
+    size: query.pageSize || 10,
+    sensorCode: query.sensorCode || undefined,
+    level: query.level || undefined,
+    // enabled=0(禁用)是合法筛选值,禁用 || 写法防止 0 被吞
+    enabled: query.enabled !== undefined && query.enabled !== '' ? query.enabled : undefined
   }
   return request({ url: '/api/alert-rules/page', method: 'get', params }).then(pageResult)
 }
 
-// 新增告警规则
+// 新增告警阈值
 export function addAlertRule(data) {
   return request({ url: '/api/alert-rules', method: 'post', data })
 }
 
-// 修改告警规则
+// 修改告警阈值
 export function updateAlertRule(id, data) {
   return request({ url: `/api/alert-rules/${id}`, method: 'put', data })
 }
 
-// 删除告警规则
+// 删除告警阈值
 export function deleteAlertRule(id) {
   return request({ url: `/api/alert-rules/${id}`, method: 'delete' })
 }

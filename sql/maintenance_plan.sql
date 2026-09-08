@@ -1,6 +1,9 @@
 -- ----------------------------
 -- 维护计划模块 DDL（add-maintenance-plan spec）
 -- 已于 2026-08-31 在 ymzw2 库执行
+-- 2026-09-05 增量变更（remove-plan-assignee spec）：负责人改由设备绑定（equipment.equipment_user_id），
+--   计划侧独立负责人废除：ALTER TABLE maintenance_plan DROP COLUMN assignee_id, DROP COLUMN assignee_name;
+--   （存量两列值均为空，无数据损失）
 -- ----------------------------
 
 -- 1. 维护计划主表
@@ -18,8 +21,6 @@ CREATE TABLE IF NOT EXISTS maintenance_plan (
   fire_date        DATE         COMMENT 'ONCE: 触发日期',
   next_fire_time   DATETIME     COMMENT '下次触发时间(预计算,DONE 为 NULL)',
   last_fire_time   DATETIME     COMMENT '上次触发时间',
-  assignee_id      BIGINT       COMMENT '负责人用户ID(可空=生成后待指派)',
-  assignee_name    VARCHAR(64),
   status           VARCHAR(16)  NOT NULL DEFAULT 'ENABLED' COMMENT 'ENABLED/PAUSED/DONE',
   create_time      DATETIME,
   update_time      DATETIME,

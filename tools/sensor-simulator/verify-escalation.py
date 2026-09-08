@@ -22,7 +22,7 @@ from datetime import datetime
 
 import paho.mqtt.client as mqtt
 
-BROKER_HOST = "localhost"
+BROKER_HOST = "8.145.53.117"
 BROKER_PORT = 1883
 # 与 simulator.py 保持一致: TEMP-001 挂在 EQ-001 下
 TOPIC = "sensor/EQ-001/TEMP-001"

@@ -26,4 +26,14 @@ public class ServiceNameConstants
      * 设备模块的serviceid
      */
     public static final String EQUIPMENT_SERVICE = "ruoyi-equipment";
+
+    /**
+     * AI模块的serviceid
+     */
+    public static final String AI_SERVICE = "ruoyi-ai";
+
+    /**
+     * 告警模块的serviceid
+     */
+    public static final String ALERT_SERVICE = "ruoyi-alert";
 }

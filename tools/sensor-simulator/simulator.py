@@ -7,7 +7,8 @@
     sensor/{equipmentCode}/{sensorCode} → MqttMessageHandler → SensorDataReceivedEvent → 落库/推送/告警
 
 双模拟器分工:
-    - 本脚本管一号机床 EQ-001(阈值告警 L1 演示: TEMP-001 周期突发越界);
+    - 本脚本管一号机床 EQ-001(TEMP-001 固定温度曲线轮询: 2 分钟一个加工周期,
+      23°C 起步升温 → 100°C 顶峰 → 30 秒快速冷却回 23°C 闭环, 曲线每周期越过 75°C 告警线);
     - 同目录 simulator-predict.py 管二号机床 EQ-002(预测告警 PREDICT 演示:
       TEMP-002 线性漂移 + VIB-002 噪声增大 + --backfill 预热回填 + maintenance 维护复位);
     - 两者按设备隔离(topic 前缀 sensor/EQ-001/# 与 sensor/EQ-002/#),
@@ -35,7 +36,7 @@ import paho.mqtt.client as mqtt
 
 # ============================== 配置区 ==============================
 
-BROKER_HOST = "localhost"
+BROKER_HOST = "8.145.53.117"
 BROKER_PORT = 1883
 
 # 每轮发布间隔(秒): 一轮内所有传感器各发一个点
@@ -48,10 +49,33 @@ SINE_PERIOD_CYCLES = 60
 # 传感器列表
 # 字段说明:
 #   sensorCode / equipmentCode / equipmentId: 业务编码与设备 ID(sensorCode 必须与 equipment_sensor 表一致)
-#   normal_min / normal_max: 正常波动范围(正弦波 + 噪声)
+#   profile: 固定值列表轮询模式(可选), 按周期计数器依次取值, 取完从头循环;
+#            配置后优先于正弦波/越界机制, 越界状态由值与阈值比较得出
+#   normal_min / normal_max: 正弦波模式正常波动范围(正弦波 + 噪声)
 #   alert_upper / alert_lower: 越界告警阈值, None 表示不启用该方向越界
-#   breach_cycle: 每多少个周期触发一次越界(0 表示从不越界)
+#   breach_cycle: 每多少个周期触发一次越界(0 表示从不越界, 仅正弦波模式生效)
 #   breach_duration: 越界持续点数(需 >= 2 才能演示告警防抖/持续点数判定, 且应 < breach_cycle)
+
+# TEMP-001 固定温度曲线: 120 点 = 120 秒 = 每 2 分钟一个完整加工周期
+# 形态: 23°C 起步 → 前 90 秒线性升温至 100°C 顶峰 → 后 30 秒快速冷却回 23°C(首尾衔接闭环) → 循环
+# 曲线每周期第 62~99 秒超过 alert_upper=75°C, 用于演示周期性越界告警
+TEMP_PROFILE = [
+    # 上升段 第 1~90 秒: 23 → 100
+    23.0, 23.9, 24.7, 25.6, 26.5, 27.3, 28.2, 29.1, 29.9, 30.8,
+    31.7, 32.5, 33.4, 34.2, 35.1, 36.0, 36.8, 37.7, 38.6, 39.4,
+    40.3, 41.2, 42.0, 42.9, 43.8, 44.6, 45.5, 46.4, 47.2, 48.1,
+    49.0, 49.8, 50.7, 51.6, 52.4, 53.3, 54.1, 55.0, 55.9, 56.7,
+    57.6, 58.5, 59.3, 60.2, 61.1, 61.9, 62.8, 63.7, 64.5, 65.4,
+    66.3, 67.1, 68.0, 68.9, 69.7, 70.6, 71.4, 72.3, 73.2, 74.0,
+    74.9, 75.8, 76.6, 77.5, 78.4, 79.2, 80.1, 81.0, 81.8, 82.7,
+    83.6, 84.4, 85.3, 86.2, 87.0, 87.9, 88.8, 89.6, 90.5, 91.3,
+    92.2, 93.1, 93.9, 94.8, 95.7, 96.5, 97.4, 98.3, 99.1, 100.0,
+    # 下降段 第 91~120 秒: 100 → 23(快速冷却, 末值回到起点温度, 轮询时首尾无缝衔接)
+    97.4, 94.9, 92.3, 89.7, 87.2, 84.6, 82.0, 79.5, 76.9, 74.3,
+    71.8, 69.2, 66.6, 64.1, 61.5, 58.9, 56.4, 53.8, 51.2, 48.7,
+    46.1, 43.5, 41.0, 38.4, 35.8, 33.3, 30.7, 28.1, 25.6, 23.0,
+]
+
 SENSORS = [
     {
         "sensorCode": "TEMP-001",
@@ -63,8 +87,8 @@ SENSORS = [
         "normal_max": 60.0,
         "alert_upper": 75.0,
         "alert_lower": None,
-        "breach_cycle": 40,
-        "breach_duration": 3,
+        # 固定曲线轮询, 曲线本身周期性越界, 无需再配 breach_cycle/breach_duration
+        "profile": TEMP_PROFILE,
     },
     {
         "sensorCode": "HUM-001",
@@ -112,9 +136,18 @@ def in_breach(cycle, cfg):
 def gen_value(cycle, cfg):
     """生成一个数据点, 返回 (值, 是否越界)
 
-    正常期: 正弦波在 [normal_min, normal_max] 内波动 + 随机噪声(量程 ±5%);
-    越界期: 有上限阈值则冲高(超出阈值 10%~20%), 否则用下限阈值下探(低于阈值 10%~20%)。
+    固定曲线模式(cfg 含 profile): 按周期计数器轮询固定值列表, 越界状态由值与阈值比较得出;
+    正弦波模式(其余传感器): 正弦波在 [normal_min, normal_max] 内波动 + 随机噪声(量程 ±5%),
+    越界期冲高/下探(超出阈值 10%~20%)。
     """
+    profile = cfg.get("profile")
+    if profile:
+        # cycle 从 1 开始, 取模实现取完列表后从头循环
+        value = profile[(cycle - 1) % len(profile)]
+        breach = (cfg["alert_upper"] is not None and value > cfg["alert_upper"]) or \
+                 (cfg["alert_lower"] is not None and value < cfg["alert_lower"])
+        return value, breach
+
     if in_breach(cycle, cfg):
         if cfg["alert_upper"] is not None:
             # 有上限优先向上冲高

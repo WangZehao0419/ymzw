@@ -8,7 +8,7 @@ DROP TABLE IF EXISTS `ai_agent`;
 CREATE TABLE `ai_agent` (
     `id`                BIGINT          AUTO_INCREMENT  PRIMARY KEY     COMMENT '主键ID',
     `agent_name`        VARCHAR(100)    NOT NULL                        COMMENT '智能体名称',
-    `agent_type`        VARCHAR(50)     NOT NULL                        COMMENT '智能体类型(CHAT/PREDICTIVE_ALARM/PART_INSPECTION/REPORT/KNOWLEDGE_QA/EMBEDDING)',
+    `agent_type`        VARCHAR(50)     NOT NULL                        COMMENT '智能体类型(CHAT/PART_INSPECTION/DIAGNOSIS/REPORT/KNOWLEDGE_QA/EMBEDDING)',
     `agent_avatar`      VARCHAR(500)                                    COMMENT '头像URL',
     `system_prompt`     TEXT                                            COMMENT '系统提示词',
     `api_endpoint`      VARCHAR(500)                                    COMMENT 'API地址',

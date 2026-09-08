@@ -1,7 +1,27 @@
 <template>
   <div class="app-container">
+    <el-form ref="queryForm" :model="queryParams" size="small" :inline="true" v-show="showSearch" label-width="82px">
+      <el-form-item label="传感器编号" prop="sensorCode">
+        <el-input v-model="queryParams.sensorCode" placeholder="请输入传感器编号" clearable @keyup.enter.native="handleQuery" />
+      </el-form-item>
+      <el-form-item label="告警级别" prop="level">
+        <el-select v-model="queryParams.level" placeholder="请选择告警级别" clearable>
+          <el-option v-for="item in levelOptions" :key="item.value" :label="item.label" :value="item.value" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="启用状态" prop="enabled">
+        <el-select v-model="queryParams.enabled" placeholder="请选择启用状态" clearable>
+          <el-option v-for="item in enabledOptions" :key="item.value" :label="item.label" :value="item.value" />
+        </el-select>
+      </el-form-item>
+      <el-form-item>
+        <el-button type="primary" icon="el-icon-search" size="mini" @click="handleQuery">搜索</el-button>
+        <el-button icon="el-icon-refresh" size="mini" @click="resetQuery">重置</el-button>
+      </el-form-item>
+    </el-form>
+
     <el-row :gutter="10" class="mb8">
-      <el-col :span="1.5"><el-button type="primary" plain icon="el-icon-plus" size="mini" @click="handleAdd">新增规则</el-button></el-col>
+      <el-col :span="1.5"><el-button type="primary" plain icon="el-icon-plus" size="mini" @click="handleAdd">新增阈值</el-button></el-col>
       <right-toolbar :showSearch.sync="showSearch" @queryTable="getList" />
     </el-row>
 
@@ -80,7 +100,19 @@ export default {
       ruleList: [],
       open: false,
       title: '',
-      queryParams: { pageNum: 1, pageSize: 10 },
+      queryParams: { pageNum: 1, pageSize: 10, sensorCode: '', level: '', enabled: '' },
+      // 查询下拉按等级从高到低排列,与运营排查时的关注优先级一致
+      levelOptions: [
+        { label: '危急', value: 'CRITICAL' },
+        { label: '严重', value: 'SEVERE' },
+        { label: '重要', value: 'IMPORTANT' },
+        { label: '预警', value: 'WARNING' }
+      ],
+      // value 用数字 0/1:与后端 enabled 字段类型及对话框提交值保持一致,避免字符串比较错配
+      enabledOptions: [
+        { label: '启用', value: 1 },
+        { label: '禁用', value: 0 }
+      ],
       form: {},
       // 传感器下拉选项(进入页面加载一次,新增/编辑对话框共用)
       sensorOptions: [],
@@ -103,6 +135,14 @@ export default {
         this.loading = false
       })
     },
+    handleQuery() {
+      this.queryParams.pageNum = 1
+      this.getList()
+    },
+    resetQuery() {
+      this.resetForm('queryForm')
+      this.handleQuery()
+    },
     // 进页面加载一次传感器下拉数据,避免每次打开对话框重复请求;pageSize 放大以覆盖全部传感器
     getSensorOptions() {
       listSensor({ pageNum: 1, pageSize: 1000 }).then(res => {
@@ -115,13 +155,13 @@ export default {
     },
     handleAdd() {
       this.reset()
-      this.title = '新增告警规则'
+      this.title = '新增告警阈值'
       this.open = true
     },
     handleUpdate(row) {
       this.reset()
       this.form = { ...row, enabled: Number(row.enabled) }
-      this.title = '编辑告警规则'
+      this.title = '编辑告警阈值'
       this.open = true
     },
     submitForm() {
@@ -136,7 +176,7 @@ export default {
       })
     },
     handleDelete(row) {
-      this.$modal.confirm(`是否确认删除传感器“${row.sensorCode}”的告警规则？`).then(() => deleteAlertRule(row.id)).then(() => {
+      this.$modal.confirm(`是否确认删除传感器“${row.sensorCode}”的告警阈值？`).then(() => deleteAlertRule(row.id)).then(() => {
         this.$modal.msgSuccess('删除成功')
         this.getList()
       }).catch(() => {})

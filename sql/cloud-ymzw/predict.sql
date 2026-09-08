@@ -99,9 +99,27 @@ WHERE `alert_type` = 'PREDICT';
 DELETE FROM `alert_event` WHERE `alert_type` = 'PREDICT';
 
 -- =============================================
+-- 5. B4 模型推理切换 — predict_result 加列(增量迁移)
+-- entity: com.ruoyi.alert.entity.PredictResult#anomalyScore/rulEarliest/rulLatest/modelVersion
+-- 检测链路由统计算法(CUSUM/MAD/趋势外推)切换为模型推理(Feign→ruoyi-ai→pdm-server):
+-- 新增列承载推理产物(anomaly_score 异常评分/rul_earliest+rul_latest RUL 区间/model_version 模型版本);
+-- RUL 点估计(rulPoint,分钟)不单独建列,由 predicted_breach_time 按"落库时刻+rulPoint 分钟"换算承载。
+-- 统计旧列(slope/t1_points/onset_time/band_json)保留不删:兼容历史数据排查,
+-- 代码已不再写入(状态回 NORMAL 时顺带清空残留)。
+-- 执行方式: 存量环境仅执行本节 ALTER;全新环境按序执行第 1-4 节后同样须补执行本节
+-- (第 1 节 CREATE TABLE 生成于加列之前,未含新列)。
+-- 生成日期: 2026-09-06
+-- =============================================
+ALTER TABLE `predict_result`
+    ADD COLUMN `anomaly_score`  DOUBLE        NULL COMMENT '异常评分(越高越异常,pdm-server推理输出)' AFTER `health_score`,
+    ADD COLUMN `rul_earliest`   BIGINT        NULL COMMENT 'RUL最早失效剩余分钟数(推理输出,可空)' AFTER `predicted_breach_time`,
+    ADD COLUMN `rul_latest`     BIGINT        NULL COMMENT 'RUL最晚失效剩余分钟数(推理输出,可空)' AFTER `rul_earliest`,
+    ADD COLUMN `model_version`  VARCHAR(64)   NULL COMMENT '推理模型版本(结果溯源与模型迭代比对)' AFTER `rul_latest`;
+
+-- =============================================
 -- 后续任务追加语句预留:
--- Task 7/8(健康度/AI 融合)如需对 predict_result 追加字段,
--- 或 Task 9 维护闭环的 maintenance_record 表,在此追加 CREATE/ALTER 语句
+-- 后续如需对 predict_result 追加字段或维护闭环新表,
+-- 在此追加 CREATE/ALTER 语句
 -- =============================================
 
 SET FOREIGN_KEY_CHECKS = 1;

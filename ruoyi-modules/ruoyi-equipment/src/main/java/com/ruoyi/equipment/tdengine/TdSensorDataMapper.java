@@ -97,12 +97,12 @@ public interface TdSensorDataMapper {
     /**
      * 建库(幂等,启动时由 TdSchemaInitializer 调用)
      */
-    @Update("CREATE DATABASE IF NOT EXISTS cloud_iot")
+    @Update("CREATE DATABASE IF NOT EXISTS ymzw")
     int createDatabase();
 
     /**
      * 建超级表(幂等,启动时由 TdSchemaInitializer 调用)
      */
-    @Update("CREATE STABLE IF NOT EXISTS cloud_iot.sensor_data (ts TIMESTAMP, val DOUBLE) TAGS(sensor_id INT, equipment_id INT)")
+    @Update("CREATE STABLE IF NOT EXISTS ymzw.sensor_data (ts TIMESTAMP, val DOUBLE) TAGS(sensor_id INT, equipment_id INT)")
     int createStable();
 }

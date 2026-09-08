@@ -63,7 +63,7 @@ import paho.mqtt.client as mqtt
 
 # ============================== 配置区 ==============================
 
-BROKER_HOST = "localhost"
+BROKER_HOST = "8.145.53.117"
 BROKER_PORT = 1883
 
 # 每轮发布间隔(秒): 一轮内所有传感器各发一个点

@@ -55,17 +55,12 @@ export const businessRoutes = [
       //   name: 'BusinessAiModel',
       //   meta: { title: 'AI模型配置', icon: 'example' }
       // },
-      // {
-      //   path: 'ai-service',
-      //   component: () => import('@/views/machine/ai-service'),
-      //   name: 'BusinessAiService',
-      //   meta: { title: 'AI智能分析', icon: 'monitor' }
-      // },
+      // ai-service 页面已随 ai.js 死代码清理删除（B5），路由块不再保留
       {
         path: 'alert-rule',
         component: () => import('@/views/machine/alert/rule'),
         name: 'BusinessAlertRule',
-        meta: { title: '告警规则', icon: 'bug' }
+        meta: { title: '告警阈值管理', icon: 'bug' }
       },
       {
         path: 'warning',
@@ -79,6 +74,13 @@ export const businessRoutes = [
         component: () => import('@/views/machine/alert/predict'),
         name: 'BusinessPredict',
         meta: { title: '预测性维护', icon: 'chart' }
+      },
+      {
+        // 预测记录：predict_alert 表分页查询（自预测性维护页拆分出的预测告警列表）
+        path: 'predict-record',
+        component: () => import('@/views/machine/alert/predict/record'),
+        name: 'BusinessPredictRecord',
+        meta: { title: '预测记录', icon: 'log' }
       },
 
       // 维保工单已接真实后端(工单自动生成/流转/完成联动维护复位)

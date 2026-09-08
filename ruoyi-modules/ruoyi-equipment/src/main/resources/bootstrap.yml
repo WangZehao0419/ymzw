@@ -11,21 +11,10 @@ spring:
   cloud:
     nacos:
       discovery:
-        server-addr: 127.0.0.1:8848
+        server-addr: 8.145.53.117:8848
       config:
-        server-addr: 127.0.0.1:8848
+        server-addr: 8.145.53.117:8848
   config:
     file-extension: yml
     import:
-      - optional:nacos:${spring.application.name}-${spring.profiles.active}.${spring.config.file-extension}
-
-# MQTT配置（设备消息接入）
-mqtt:
-  broker: tcp://${MQTT_BROKER:localhost}:1883
-  client-id: ${MQTT_CLIENT_ID:ruoyi-equipment}
-  username: ${MQTT_USERNAME:admin}
-  password: ${MQTT_PASSWORD:admin123}
-  topic:
-    sensor-data: iot/equipment/+/sensor/+/data
-    alert: iot/alert/+
-  qos: 1
+      - nacos:${spring.application.name}-${spring.profiles.active}.${spring.config.file-extension}
