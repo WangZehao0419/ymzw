@@ -2,6 +2,7 @@ package com.ruoyi.alert.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.ruoyi.alert.api.domain.WorkOrderCreateDTO;
 import com.ruoyi.alert.entity.AlertEvent;
 import com.ruoyi.alert.entity.MaintenancePlan;
 import com.ruoyi.alert.entity.WorkOrder;
@@ -16,6 +17,7 @@ import com.ruoyi.common.core.constant.SecurityConstants;
 import com.ruoyi.common.core.domain.R;
 import com.ruoyi.common.core.exception.ServiceException;
 import com.ruoyi.equipment.api.RemoteEquipmentService;
+import com.ruoyi.equipment.api.domain.EquipmentMetaDTO;
 import com.ruoyi.equipment.api.domain.SensorMetaDTO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -154,9 +156,30 @@ public class WorkOrderServiceImpl implements WorkOrderService {
         order.setEquipmentName(plan.getEquipmentName());
         order.setDescription(buildPlanDescription(plan));
         order.setStatus("PENDING");
-        // 计划侧负责人快照到处理人:计划未配置时留空,工单先挂起由调度人工转派
-        order.setHandler(plan.getAssigneeId());
-        order.setHandlerName(plan.getAssigneeName());
+        // 计划不承载负责人:建单时动态查设备绑定负责人作处理人(设备改绑后下次
+        // 建单即生效);未绑定/查询失败留空待转派,绝不因定人失败丢单——与告警侧
+        // createFromAlert 的 Feign 取人模式与容错语义完全一致
+        Long handlerId = null;
+        String handlerName = null;
+        try {
+            R<EquipmentMetaDTO> equipmentResult = remoteEquipmentService.getEquipmentMeta(
+                    plan.getEquipmentId(), SecurityConstants.INNER);
+            if (equipmentResult != null && R.FAIL != equipmentResult.getCode()
+                    && equipmentResult.getData() != null
+                    && equipmentResult.getData().getEquipmentUserId() != null) {
+                // equipmentUserId 为 Integer 需转 Long 对齐工单处理人字段
+                handlerId = equipmentResult.getData().getEquipmentUserId().longValue();
+                handlerName = equipmentResult.getData().getEquipmentUserName();
+            } else {
+                log.debug("[WorkOrder] 设备未配负责人或设备服务不可用,工单不带处理人: equipmentId={}",
+                        plan.getEquipmentId());
+            }
+        } catch (Exception e) {
+            log.warn("[WorkOrder] 负责人查询失败,工单不带处理人: equipmentId={}, error={}",
+                    plan.getEquipmentId(), e.getMessage());
+        }
+        order.setHandler(handlerId);
+        order.setHandlerName(handlerName);
 
         try {
             workOrderMapper.insert(order);
@@ -166,10 +189,66 @@ public class WorkOrderServiceImpl implements WorkOrderService {
             workOrderMapper.insert(order);
         }
         // 计划建单同样留痕:流转记录覆盖全部建单路径,否则预防维护工单时间线为空;
-        // 计划未配处理人与告警侧同口径记"待转派"
-        writeLog(order, "CREATE", "system", plan.getAssigneeName() != null
-                ? "维护计划 " + plan.getPlanNo() + " 触发自动生成，处理人 " + plan.getAssigneeName()
-                : "维护计划 " + plan.getPlanNo() + " 触发自动生成，计划未配置负责人，待转派");
+        // 设备未绑负责人与告警侧同口径记"待转派"
+        writeLog(order, "CREATE", "system", handlerName != null
+                ? "维护计划 " + plan.getPlanNo() + " 触发自动生成，处理人 " + handlerName
+                : "维护计划 " + plan.getPlanNo() + " 触发自动生成，设备未绑定负责人，待转派");
+        return order;
+    }
+
+    @Override
+    public WorkOrder createManual(WorkOrderCreateDTO cmd, String operator) {
+        // 必填校验收敛在服务端:契约层 DTO 刻意不带 validation 注解(与 ruoyi-api-equipment
+        // 风格一致),调用方(MCP)传参缺失时以中文 ServiceException 消息原样回传,便于直接提示用户
+        if (cmd == null) {
+            throw new ServiceException("创建参数不能为空");
+        }
+        if (cmd.getOrderType() == null || cmd.getOrderType().isBlank()) {
+            throw new ServiceException("工单类型不能为空");
+        }
+        if (cmd.getEquipmentId() == null) {
+            throw new ServiceException("设备ID不能为空");
+        }
+        if (cmd.getEquipmentName() == null || cmd.getEquipmentName().isBlank()) {
+            throw new ServiceException("设备名称不能为空");
+        }
+        if (cmd.getDescription() == null || cmd.getDescription().isBlank()) {
+            throw new ServiceException("工单描述不能为空");
+        }
+
+        WorkOrder order = new WorkOrder();
+        order.setOrderNo(generateOrderNo());
+        order.setOrderType(cmd.getOrderType());
+        // related_id 不设(null):related_id 由 order_type 路由到自动建单来源表
+        // (故障维修→alert_event,预防维护→maintenance_plan),手动单不属于任一
+        // 自动来源,强行挂靠会造成追溯错乱
+        order.setEquipmentId(cmd.getEquipmentId());
+        order.setEquipmentName(cmd.getEquipmentName());
+        order.setSensorId(cmd.getSensorId());
+        order.setSensorName(cmd.getSensorName());
+        // 级别缺省 WARNING:手动单多为巡检发现的轻度问题,调用方未指定时取最低维修级别
+        order.setAlertLevel(cmd.getAlertLevel() == null || cmd.getAlertLevel().isBlank()
+                ? "WARNING" : cmd.getAlertLevel());
+        order.setDescription(cmd.getDescription());
+        order.setStatus("PENDING");
+        // 处理人可空:未指定时工单挂起,与自动建单的"待转派"语义一致
+        order.setHandler(cmd.getHandler());
+        order.setHandlerName(cmd.getHandlerName());
+
+        // 手动创建不去重:自动建单的去重是为抑制告警风暴(模拟器约 20 秒/条)刷出
+        // 重复单;手动建单是调用方的明确意图,服务端若按"同设备同类型未结单"拦截,
+        // 会把同一设备先后两个独立故障的第二张合法工单挡掉,重复应由调用方自查
+        try {
+            workOrderMapper.insert(order);
+        } catch (DuplicateKeyException e) {
+            // order_no 唯一键冲突:与 createFromAlert 同口径,换号重试一次
+            order.setOrderNo(generateOrderNo());
+            workOrderMapper.insert(order);
+        }
+        // 建单留痕:operator 由调用链传入(MCP 链路为 ai-assistant),
+        // 与自动建单的 system 在流转日志中区分来源
+        writeLog(order, "CREATE", operator,
+                "AI 助手手动创建工单，工单类型 " + order.getOrderType() + "，设备 " + order.getEquipmentName());
         return order;
     }
 

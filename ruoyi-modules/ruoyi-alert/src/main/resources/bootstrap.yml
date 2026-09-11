@@ -11,11 +11,11 @@ spring:
   cloud:
     nacos:
       discovery:
-        server-addr: 127.0.0.1:8848
+        server-addr: 8.145.53.117:8848
       config:
-        server-addr: 127.0.0.1:8848
+        server-addr: 8.145.53.117:8848
   config:
     file-extension: yml
     import:
-      # 业务模块配置本地自持，Nacos 配置可选覆盖
-      - optional:nacos:${spring.application.name}-${spring.profiles.active}.${spring.config.file-extension}
+      # 业务配置统一由 Nacos 配置中心下发（data_id: ruoyi-alert-dev.yml）
+      - nacos:${spring.application.name}-${spring.profiles.active}.${spring.config.file-extension}

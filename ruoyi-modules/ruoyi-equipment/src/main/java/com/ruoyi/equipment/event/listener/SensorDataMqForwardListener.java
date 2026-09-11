@@ -1,6 +1,5 @@
 package com.ruoyi.equipment.event.listener;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ruoyi.equipment.entity.EquipmentSensor;
 import com.ruoyi.equipment.event.SensorDataReceivedEvent;
@@ -56,8 +55,8 @@ public class SensorDataMqForwardListener {
             // 回填 sensorId:MQTT 入口只携带编码,而告警侧规则按主键 id 匹配,
             // 元数据查不到或查询异常均不阻断转发(消费端按无 sensorId 场景处理)
             try {
-                EquipmentSensor sensor = sensorService.getOne(new LambdaQueryWrapper<EquipmentSensor>()
-                        .eq(EquipmentSensor::getSensorCode, event.getSensorCode()));
+                // 高频报文走 60 秒 TTL 缓存;查库异常不缓存直接抛出,由下方 catch 保持"继续转发"语义
+                EquipmentSensor sensor = sensorService.getByCodeCached(event.getSensorCode());
                 if (sensor != null) {
                     msg.put("sensorId", sensor.getId());
                 }

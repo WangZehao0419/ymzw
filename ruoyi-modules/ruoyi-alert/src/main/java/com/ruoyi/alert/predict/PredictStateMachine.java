@@ -5,6 +5,7 @@ import com.ruoyi.alert.entity.AlertEvent;
 import com.ruoyi.alert.entity.PredictAlert;
 import com.ruoyi.alert.event.AlertTriggeredEvent;
 import com.ruoyi.alert.mapper.PredictAlertMapper;
+import com.ruoyi.ai.api.domain.AiPredictResultDTO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -13,7 +14,6 @@ import org.springframework.stereotype.Component;
 
 import com.ruoyi.equipment.api.domain.SensorMetaDTO;
 
-import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
@@ -22,15 +22,18 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * 预测性维护劣化状态机(per sensor)
  * <p>
+ * B4 起检测信号源由统计算法(MAD/CUSUM/趋势外推)切换为模型推理
+ * (RemoteAiService→ruoyi-ai→pdm-server),迁移条件改看 isAnomaly 持续性,
+ * 状态语义与告警生命周期保持不变:
  * 状态: NORMAL → DEGRADING → BREACHED
- * - NORMAL→DEGRADING: L2 突变(MAD 体制变化/CUSUM 漂移)或 L3 显著趋势
- *   (R2 达标且 t1 在外推时域内)。入态发一次 PREDICT 告警(D7 防刷屏:
- *   同一劣化期只发一条,后续靠升级/恢复更新该条,不重复发);
+ * - NORMAL→DEGRADING: isAnomaly 连续 true 轮数达到 anomalyRounds
+ *   (模型单轮毛刺不触发,替代原"L2 突变单轮触发")。入态发一次 PREDICT 告警
+ *   (D7 防刷屏:同一劣化期只发一条,后续靠升级/恢复更新该条,不重复发);
  * - DEGRADING→BREACHED: 实测规则告警(RULE)命中说明预测兑现,活动
  *   PREDICT 告警置 RESOLVED(预测的使命已结束,后续由 RULE 告警接管);
- * - DEGRADING→NORMAL(幽灵退出): t1 较上次推后超阈值说明劣化在放缓,
- *   之前的"即将越限"是趋势误读,告警置 RESOLVED 防止长期挂一条不兑现的预测;
- * - 任意→NORMAL: 维护复位(reset),同时清基线让下轮重学。
+ * - DEGRADING→NORMAL(幽灵退出): RUL 较上轮推后超阈值说明劣化在放缓,
+ *   之前的"即将失效"是模型误读,告警置 RESOLVED 防止长期挂一条不兑现的预测;
+ * - 任意→NORMAL: 维护复位(reset)。
  * </p>
  *
  * @author smartartisan
@@ -41,7 +44,6 @@ import java.util.concurrent.ConcurrentHashMap;
 public class PredictStateMachine {
 
     private final PredictProperties props;
-    private final BaselineRegistry baselineRegistry;
     private final ApplicationEventPublisher eventPublisher;
     /** 预测告警独立落 predict_alert(D1),句柄更新必须同表命中,故不走 AlertEventMapper */
     private final PredictAlertMapper predictAlertMapper;
@@ -58,8 +60,12 @@ public class PredictStateMachine {
     static class SensorState {
         private String status = "NORMAL";
         private Long alertEventId;
-        private Integer lastT1Points;
+        /** 上轮 RUL 点估计(分钟):幽灵退出的推后比较基准 */
+        private Long lastRulPoint;
+        /** 已升级为可预测告警(告警携带失效时刻) */
         private boolean predictiveNotified;
+        /** isAnomaly 连续 true 轮计数(中断即清零) */
+        private int anomalyRounds;
 
         void to(String next) {
             this.status = next;
@@ -69,46 +75,45 @@ public class PredictStateMachine {
     /**
      * 推进单传感器状态机并处理告警的发出/升级/恢复
      *
-     * @param sensor         传感器元数据(告警展示字段来源)
-     * @param mad            L2 MAD 检测结果
-     * @param cusum          L2 CUSUM 检测结果
-     * @param trend          L3 趋势外推结果(null=无规则/未过显著性门)
-     * @param smoothedValue  当前平滑值(告警 sensorValue 展示用)
+     * @param sensor      传感器元数据(告警展示字段来源)
+     * @param ai          本轮模型推理结果(null 视为无异常信号,计连续轮清零)
+     * @param sensorValue 当前传感器值(窗口末点原始值,告警 sensorValue 展示用)
      * @return 推进后的状态(NORMAL/DEGRADING/BREACHED)
      */
-    public String advance(SensorMetaDTO sensor, MadDetector.Result mad, CusumDetector.Result cusum,
-                          TrendExtrapolator.Result trend, double smoothedValue) {
+    public String advance(SensorMetaDTO sensor, AiPredictResultDTO ai, double sensorValue) {
         String code = sensor.getSensorCode();
         SensorState st = states.computeIfAbsent(code, k -> new SensorState());
-        boolean l2Hit = mad.isRegimeChange() || cusum.isDrift();
-        Integer t1 = trend != null ? trend.getT1Points() : null;
+        boolean anomaly = ai != null && Boolean.TRUE.equals(ai.getIsAnomaly());
+        Long rul = ai != null ? ai.getRulPoint() : null;
         synchronized (st) {
+            // 连续异常轮计数:非异常(含推理结果缺失)立即清零,入态只认连续命中
+            st.setAnomalyRounds(anomaly ? st.getAnomalyRounds() + 1 : 0);
             switch (st.getStatus()) {
                 case "NORMAL" -> {
-                    // 入态双通道:L2 突变(还没形成趋势)或 L3 显著趋势(已能算出触线点数)
-                    if (l2Hit || t1 != null) {
+                    // 入态看 isAnomaly 持续性:连续 anomalyRounds 轮异常才认定劣化开始
+                    if (st.getAnomalyRounds() >= props.getAnomalyRounds()) {
                         st.to("DEGRADING");
-                        st.setLastT1Points(t1);
-                        firePredictAlert(sensor, mad, cusum, trend, smoothedValue, st);
+                        st.setLastRulPoint(rul);
+                        firePredictAlert(sensor, ai, sensorValue, st);
                     }
                 }
                 case "DEGRADING" -> {
-                    // 幽灵退出:仅当有 t1 且较上次推后超阈值(小幅波动不退出,防反复横跳刷告警)
-                    if (t1 != null && st.getLastT1Points() != null
-                            && t1 - st.getLastT1Points() > props.getT1DeferExitPoints()) {
-                        resolveActiveAlert(code, st, "幽灵退出(t1 推后超阈值)");
+                    // 幽灵退出:仅当 RUL 较上轮推后超阈值(小幅波动不退出,防反复横跳刷告警)
+                    if (rul != null && st.getLastRulPoint() != null
+                            && rul - st.getLastRulPoint() > props.getRulDeferExitMinutes()) {
+                        resolveActiveAlert(code, st, "幽灵退出(RUL 推后超阈值)");
                         resetInner(code, st);
                     } else {
-                        if (t1 != null) {
-                            st.setLastT1Points(t1);
+                        if (rul != null) {
+                            st.setLastRulPoint(rul);
                             if (!st.isPredictiveNotified()) {
-                                // 升级预留:首次从"L2 突变"升级为"可预测越界时刻",
+                                // 升级预留:首次从"异常但无 RUL"升级为"可预测失效时刻",
                                 // 更新已有告警(predictedBreachTime/evidence/level 升 SEVERE)不新发
                                 st.setPredictiveNotified(true);
-                                escalateToPredictive(sensor, mad, cusum, trend, st);
+                                escalateToPredictive(sensor, ai, sensorValue, st);
                             } else if (st.getAlertEventId() != null) {
-                                // 后续轮次只刷新触线时刻(趋势演进中 t1 会变,保持告警信息最新)
-                                refreshBreachTime(trend, st);
+                                // 后续轮次只刷新失效时刻(RUL 随劣化演进每轮变化,保持告警信息最新)
+                                refreshBreachTime(ai, st);
                             }
                         }
                     }
@@ -147,15 +152,13 @@ public class PredictStateMachine {
     }
 
     /**
-     * 维护复位:状态回 NORMAL + 清基线(下轮重学)+ 活动预测告警置 RESOLVED
+     * 维护复位:状态回 NORMAL + 活动预测告警置 RESOLVED
      *
      * @param sensorCode 传感器编号
      */
     public void reset(String sensorCode) {
         SensorState st = states.get(sensorCode);
         if (st == null) {
-            // 无内存状态也清基线:维护后正常态参照必须重建
-            baselineRegistry.reset(sensorCode);
             return;
         }
         synchronized (st) {
@@ -175,8 +178,7 @@ public class PredictStateMachine {
     /**
      * 入态发 PREDICT 告警(WARNING 起步),走与 L1 相同的事件链路(落库/流推送)
      */
-    private void firePredictAlert(SensorMetaDTO sensor, MadDetector.Result mad, CusumDetector.Result cusum,
-                                  TrendExtrapolator.Result trend, double smoothedValue, SensorState st) {
+    private void firePredictAlert(SensorMetaDTO sensor, AiPredictResultDTO ai, double sensorValue, SensorState st) {
         AlertEvent alert = new AlertEvent();
         alert.setEquipmentId(sensor.getEquipmentId());
         alert.setEquipmentName(sensor.getEquipmentName());
@@ -184,56 +186,55 @@ public class PredictStateMachine {
         alert.setSensorCode(sensor.getSensorCode());
         alert.setSensorName(sensor.getSensorName());
         alert.setAlertType("PREDICT");
-        // 入态即带 t1 说明已能预测越界时刻,直接 SEVERE;纯 L2 突变先 WARNING,升级时再抬
-        boolean predictive = trend != null && trend.getT1Points() != null;
+        // 入态即有 RUL 说明已能预测失效时刻,直接 SEVERE;纯异常无 RUL 先 WARNING,升级时再抬
+        boolean predictive = ai != null && ai.getRulPoint() != null;
         alert.setAlertLevel(predictive ? "SEVERE" : "WARNING");
         alert.setAlertStatus("FIRING");
-        // 平滑值是滑动平均的原始浮点结果(如 49.998666...),传感器原始上报值本身
-        // 为两位小数;此处取两位与 L1 告警口径一致,避免展示/语音播报输出一长串小数
-        alert.setSensorValue(Math.round(smoothedValue * 100D) / 100D);
+        // 窗口末点是模型输入的最新采样;取两位与 L1 告警口径一致,
+        // 避免展示/语音播报输出一长串小数
+        alert.setSensorValue(Math.round(sensorValue * 100D) / 100D);
         alert.setTriggerTime(LocalDateTime.now());
         alert.setPredictedBreachTime(predictive
-                ? toLocalDateTime(trend.getPredictedBreachTimeMs()) : null);
+                ? toLocalDateTime(ai.getRulPoint()) : null);
         alert.setEscalationCount(0);
-        alert.setEvidence(buildEvidence(mad, cusum, trend));
+        alert.setEvidence(buildEvidence(ai));
         eventPublisher.publishEvent(new AlertTriggeredEvent(this, alert));
         // 落库监听器同步 insert 后主键回填到实体,此处取回留作后续升级/恢复的更新句柄
         st.setAlertEventId(alert.getId());
         st.setPredictiveNotified(predictive);
-        log.info("[PREDICT] 劣化入态告警: sensorCode={}, level={}, t1={}, madRatio={}, cusumDrift={}",
+        log.info("[PREDICT] 劣化入态告警: sensorCode={}, level={}, rulPoint={}, anomalyScore={}",
                 sensor.getSensorCode(), alert.getAlertLevel(),
-                trend == null ? null : trend.getT1Points(),
-                String.format("%.2f", mad.getRatio()), cusum.isDrift());
+                ai == null ? null : ai.getRulPoint(),
+                ai == null ? null : ai.getAnomalyScore());
     }
 
     /**
-     * L2 告警升级为可预测告警:更新原告警的触线时刻/证据/等级,不新发(防刷屏)
+     * 无 RUL 告警升级为可预测告警:更新原告警的失效时刻/证据/等级,不新发(防刷屏)
      */
-    private void escalateToPredictive(SensorMetaDTO sensor, MadDetector.Result mad, CusumDetector.Result cusum,
-                                      TrendExtrapolator.Result trend, SensorState st) {
+    private void escalateToPredictive(SensorMetaDTO sensor, AiPredictResultDTO ai, double sensorValue, SensorState st) {
         if (st.getAlertEventId() == null) {
             // 无活动告警句柄(如落库失败):补发一条,不让升级信息丢失
-            firePredictAlert(sensor, mad, cusum, trend, trend.getSmoothedCurrent(), st);
+            firePredictAlert(sensor, ai, sensorValue, st);
             return;
         }
         AlertEvent upd = new AlertEvent();
         upd.setId(st.getAlertEventId());
         upd.setAlertLevel("SEVERE");
-        upd.setPredictedBreachTime(toLocalDateTime(trend.getPredictedBreachTimeMs()));
-        upd.setEvidence(buildEvidence(mad, cusum, trend));
+        upd.setPredictedBreachTime(toLocalDateTime(ai.getRulPoint()));
+        upd.setEvidence(buildEvidence(ai));
         // 句柄 id 来自 predict_alert 落库回填,更新须转 PredictAlert 同表命中(D1)
         predictAlertMapper.updateById(PredictAlert.from(upd));
-        log.info("[PREDICT] 告警升级为可预测(SEVERE): sensorCode={}, alertEventId={}, t1={}",
-                sensor.getSensorCode(), st.getAlertEventId(), trend.getT1Points());
+        log.info("[PREDICT] 告警升级为可预测(SEVERE): sensorCode={}, alertEventId={}, rulPoint={}",
+                sensor.getSensorCode(), st.getAlertEventId(), ai.getRulPoint());
     }
 
     /**
-     * 刷新活动告警的触线时刻与证据(趋势演进中 t1 持续变化)
+     * 刷新活动告警的失效时刻(RUL 随劣化演进每轮变化)
      */
-    private void refreshBreachTime(TrendExtrapolator.Result trend, SensorState st) {
+    private void refreshBreachTime(AiPredictResultDTO ai, SensorState st) {
         AlertEvent upd = new AlertEvent();
         upd.setId(st.getAlertEventId());
-        upd.setPredictedBreachTime(toLocalDateTime(trend.getPredictedBreachTimeMs()));
+        upd.setPredictedBreachTime(toLocalDateTime(ai.getRulPoint()));
         // 句柄 id 来自 predict_alert 落库回填,更新须转 PredictAlert 同表命中(D1)
         predictAlertMapper.updateById(PredictAlert.from(upd));
     }
@@ -256,42 +257,40 @@ public class PredictStateMachine {
     }
 
     /**
-     * 状态内部复位:回 NORMAL + 清告警句柄/退出比较基准(基线由 reset 调用方清)
+     * 状态内部复位:回 NORMAL + 清告警句柄/退出比较基准/连续异常计数
      */
     private void resetInner(String sensorCode, SensorState st) {
         st.to("NORMAL");
         st.setAlertEventId(null);
-        st.setLastT1Points(null);
+        st.setLastRulPoint(null);
         st.setPredictiveNotified(false);
-        baselineRegistry.reset(sensorCode);
+        st.setAnomalyRounds(0);
     }
 
     /**
-     * 证据 JSON:layer/slope/r2/onset/madRatio/cusum/t1Points(排查与前端展示用)
+     * 证据 JSON:layer/anomalyScore/healthScore/rulPoint/rulEarliest/rulLatest/modelVersion
+     * (模型推理产物,排查与前端展示用)
      */
-    private String buildEvidence(MadDetector.Result mad, CusumDetector.Result cusum,
-                                 TrendExtrapolator.Result trend) {
+    private String buildEvidence(AiPredictResultDTO ai) {
         try {
             Map<String, Object> ev = new HashMap<>();
             ev.put("layer", "PREDICT");
-            ev.put("slope", trend == null ? null : round(trend.getB()));
-            ev.put("r2", trend == null ? null : round(trend.getR2()));
-            ev.put("onset", cusum != null && cusum.isDrift() ? cusum.getOnsetTs() : null);
-            ev.put("madRatio", round(mad.getRatio()));
-            ev.put("cusum", cusum != null && cusum.isDrift() ? round(cusum.getCPlus()) : null);
-            ev.put("t1Points", trend == null ? null : trend.getT1Points());
+            ev.put("anomalyScore", ai == null ? null : ai.getAnomalyScore());
+            ev.put("healthScore", ai == null ? null : ai.getHealthScore());
+            ev.put("rulPoint", ai == null ? null : ai.getRulPoint());
+            ev.put("rulEarliest", ai == null ? null : ai.getRulEarliest());
+            ev.put("rulLatest", ai == null ? null : ai.getRulLatest());
+            ev.put("modelVersion", ai == null ? null : ai.getModelVersion());
             return objectMapper.writeValueAsString(ev);
         } catch (Exception e) {
             return "{}";
         }
     }
 
-    private Double round(double v) {
-        return Math.round(v * 10000D) / 10000D;
-    }
-
-    private LocalDateTime toLocalDateTime(long epochMs) {
-        return LocalDateTime.ofInstant(Instant.ofEpochMilli(epochMs),
-                java.time.ZoneId.systemDefault());
+    /**
+     * RUL 点估计(分钟) → 预计失效时刻(now + rulPoint 分钟)
+     */
+    private LocalDateTime toLocalDateTime(Long rulPoint) {
+        return LocalDateTime.now().plusMinutes(rulPoint);
     }
 }

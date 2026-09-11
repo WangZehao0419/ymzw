@@ -1,0 +1,13 @@
+# 预测性维护推理服务(pdm-server)依赖:纯推理边界,不连数据库、不发对外 HTTP
+# (标定体系已下线,无前置流程;起服务仅需模型权重)
+#
+# 安装:pip install -r requirements.txt
+# CUDA 环境:torch 需自装对应 CUDA 版(如 pip install torch --index-url https://download.pytorch.org/whl/cu121),
+#           纯 CPU 环境直接 pip install torch 即可
+
+chronos-forecasting>=2.0
+torch
+numpy
+pandas[pyarrow]
+fastapi
+uvicorn

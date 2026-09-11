@@ -8,8 +8,8 @@ import lombok.Getter;
 public enum AgentTypeEnum {
 
     CHAT("CHAT", "通用对话"),
-    PREDICTIVE_ALARM("PREDICTIVE_ALARM", "预测性告警"),
     PART_INSPECTION("PART_INSPECTION", "零件检测"),
+    DIAGNOSIS("DIAGNOSIS", "诊断智能体"),
     REPORT("REPORT", "报告生成"),
     KNOWLEDGE_QA("KNOWLEDGE_QA", "知识问答"),
     EMBEDDING("EMBEDDING", "向量嵌入");

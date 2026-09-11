@@ -74,6 +74,7 @@ CREATE TABLE `equipment_sensor` (
     `sensor_status`     INT             DEFAULT 1                       COMMENT '传感器状态(0-禁用,1-启用)',
     `equipment_id`      INT                                             COMMENT '所属设备ID',
     `equipment_name`    VARCHAR(100)                                    COMMENT '所属设备名称(冗余字段)',
+    `sensor_baseline`   TEXT                                            COMMENT '健康基线(JSON数组,采集时刻前最近1024个原始数据点)',
     `create_time`       DATETIME                                        COMMENT '记录创建时间',
     `update_time`       DATETIME                                        COMMENT '记录修改时间',
     `create_user`       VARCHAR(50)                                     COMMENT '创建人',

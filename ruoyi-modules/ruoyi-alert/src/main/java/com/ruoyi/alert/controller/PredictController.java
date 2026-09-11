@@ -2,15 +2,15 @@ package com.ruoyi.alert.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.ruoyi.ai.api.RemoteAiService;
+import com.ruoyi.ai.api.domain.AiPredictRequestDTO;
+import com.ruoyi.ai.api.domain.AiPredictResultDTO;
 import com.ruoyi.alert.entity.AlertRule;
 import com.ruoyi.alert.entity.PredictAlert;
 import com.ruoyi.alert.entity.PredictResult;
 import com.ruoyi.alert.mapper.PredictAlertMapper;
-import com.ruoyi.alert.predict.BaselineRegistry;
 import com.ruoyi.alert.predict.PredictProperties;
-import com.ruoyi.alert.predict.TrendExtrapolator;
-import com.ruoyi.alert.predict.domain.Baseline;
-import com.ruoyi.alert.predict.domain.SensorWindow;
+import com.ruoyi.alert.predict.PredictTask;
 import com.ruoyi.alert.service.PredictResultService;
 import com.ruoyi.alert.service.RuleService;
 import com.ruoyi.common.core.constant.SecurityConstants;
@@ -29,9 +29,11 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -40,9 +42,12 @@ import java.util.stream.Collectors;
 /**
  * 预测性维护页面接口
  * <p>
+ * B4 起检测链路切换为模型推理(Feign→ruoyi-ai→pdm-server),
+ * T2 起历史窗口由 ruoyi-ai 拉取,本模块不再取数:
  * sensors: 全量传感器元数据(Feign) 左连 predict_result 快照,供选择器与状态总览;
- * detail: 实时拉历史窗口现算平滑/趋势(读接口,不动 PredictTask 的基线缓存——
- * 缓存缺失时临时学习不落缓存),曲线数据总是最新一轮调度之后的状态。
+ * detail: 与 PredictTask 完全同入口构造推理请求调 RemoteAiService(只传编码/阈值/步长),
+ * 返回原始窗口(取自推理响应回显) + 本轮推理产物(异常评分/健康分/分位带/RUL),统计字段已全部移除;
+ * overview: 按设备聚合的健康总览。
  * 时间字段一律 Long epoch millis(D9:规避 LocalDateTime 跨端序列化数组坑)。
  * </p>
  *
@@ -55,33 +60,94 @@ import java.util.stream.Collectors;
 public class PredictController {
 
     private final RemoteEquipmentService remoteEquipmentService;
+    private final RemoteAiService remoteAiService;
     private final PredictResultService predictResultService;
     private final RuleService ruleService;
-    private final BaselineRegistry baselineRegistry;
     private final PredictProperties props;
     private final PredictAlertMapper predictAlertMapper;
 
     /**
-     * 预测告警分页(predict_alert 独立表,预测性维护页专用)
+     * 证据窗口条数:够展示触发前趋势,请求量可控(inner 历史接口上限 2000)
+     */
+    private static final int EVIDENCE_POINTS = 300;
+
+    /**
+     * 预测告警分页(predict_alert 独立表,预测记录页专用)
      * <p>
      * 分表后不再借用告警记录接口,字段名与 alert_event 对齐(D2)前端列表零改动。
-     * 筛选参数均可选,仅在前端实际传值时才拼接条件。
+     * 筛选参数均可选,仅在前端实际传值时才拼接条件;
+     * 列表以设备为主语展示(传感器信息移入证据),筛选为设备名称(like)。
      * </p>
      */
     @GetMapping("/alerts")
     public TableDataInfo alerts(@RequestParam(defaultValue = "1") long page,
                                 @RequestParam(defaultValue = "10") long size,
-                                @RequestParam(required = false) String sensorCode,
-                                @RequestParam(required = false) String alertLevel,
+                                @RequestParam(required = false) String equipmentName,
                                 @RequestParam(required = false) String alertStatus) {
         LambdaQueryWrapper<PredictAlert> wrapper = new LambdaQueryWrapper<PredictAlert>()
-                .eq(StringUtils.hasText(sensorCode), PredictAlert::getSensorCode, sensorCode)
-                .eq(StringUtils.hasText(alertLevel), PredictAlert::getAlertLevel, alertLevel)
+                // 设备名称用 like 模糊匹配:按名称习惯查找,支持部分名称命中
+                .like(StringUtils.hasText(equipmentName), PredictAlert::getEquipmentName, equipmentName)
                 .eq(StringUtils.hasText(alertStatus), PredictAlert::getAlertStatus, alertStatus)
                 // 预测页关注最新触发的预测告警,按触发时间倒序
                 .orderByDesc(PredictAlert::getTriggerTime);
         Page<PredictAlert> p = predictAlertMapper.selectPage(new Page<>(page, size), wrapper);
         return new TableDataInfo(p.getRecords(), p.getTotal());
+    }
+
+    /**
+     * 预测告警触发前证据:该设备全部传感器在本条告警触发时刻之前的原始数据曲线
+     * <p>
+     * 设备维度决策支撑:不只看触发传感器的摘要,而展示同设备全部传感器
+     * 触发前的数据段,便于判断设备整体态势。窗口截止于 triggerTime(endTimeTs
+     * 时间上界),历史记录不混入触发后数据;单传感器拉取失败跳过(log.warn),
+     * 不影响其余传感器返回。
+     * </p>
+     *
+     * @param id 预测告警 id
+     * @return 该设备各传感器触发前数据点列表(firing=触发该告警的传感器)
+     */
+    @GetMapping("/alerts/{id}/evidence")
+    public R<List<SensorEvidenceVO>> alertEvidence(@PathVariable("id") Long id) {
+        PredictAlert alert = predictAlertMapper.selectById(id);
+        if (alert == null) {
+            return R.fail("预测告警不存在");
+        }
+        // 该设备全部传感器元数据(名称/单位展示用)
+        R<List<SensorMetaDTO>> metaResult = remoteEquipmentService.listAllSensors(SecurityConstants.INNER);
+        if (metaResult == null || R.FAIL == metaResult.getCode() || metaResult.getData() == null) {
+            return R.fail("传感器元数据获取失败");
+        }
+        List<SensorMetaDTO> equipmentSensors = metaResult.getData().stream()
+                .filter(m -> m.getEquipmentId() != null && alert.getEquipmentId() != null
+                        && m.getEquipmentId().equals(alert.getEquipmentId()))
+                .collect(Collectors.toList());
+        // 触发时刻作时间上界:证据只含触发前数据
+        Long endTimeTs = toEpochMs(alert.getTriggerTime());
+        List<SensorEvidenceVO> vos = new ArrayList<>(equipmentSensors.size());
+        for (SensorMetaDTO meta : equipmentSensors) {
+            SensorEvidenceVO vo = new SensorEvidenceVO();
+            vo.setSensorCode(meta.getSensorCode());
+            vo.setSensorName(meta.getSensorName());
+            vo.setUnit(meta.getUnit());
+            // firing 标记:本条告警的触发传感器(前端高亮展示)
+            vo.setFiring(meta.getSensorCode() != null && meta.getSensorCode().equals(alert.getSensorCode()));
+            try {
+                R<List<SensorPointDTO>> history = remoteEquipmentService
+                        .getSensorHistory(meta.getSensorCode(), EVIDENCE_POINTS, endTimeTs, SecurityConstants.INNER);
+                if (history != null && R.SUCCESS == history.getCode() && history.getData() != null) {
+                    vo.setPoints(history.getData());
+                } else {
+                    vo.setPoints(List.of());
+                }
+            } catch (Exception e) {
+                // 单传感器拉取失败跳过:证据是展示类数据,不让单点失败中断整单
+                log.warn("[evidence] 传感器触发前窗口拉取失败, alertId={}, sensorCode={}: {}",
+                        id, meta.getSensorCode(), e.getMessage());
+                vo.setPoints(List.of());
+            }
+            vos.add(vo);
+        }
+        return R.ok(vos);
     }
 
     /**
@@ -92,7 +158,7 @@ public class PredictController {
         R<List<SensorMetaDTO>> metaResult = remoteEquipmentService.listAllSensors(SecurityConstants.INNER);
         if (metaResult == null || R.FAIL == metaResult.getCode()
                 || metaResult.getData() == null || metaResult.getData().isEmpty()) {
-            // 元数据服务不可用:页面选择器无数据可言,返回空列表(前端提示重试)
+            // 元数据服务不可用:页面选择器无数据可言,返回失败(前端提示重试)
             return R.fail("传感器元数据获取失败");
         }
         Map<String, PredictResult> snapshots = predictResultService.lambdaQuery()
@@ -110,10 +176,9 @@ public class PredictController {
             if (snapshot != null) {
                 vo.setStatus(snapshot.getStatus());
                 vo.setHealthScore(snapshot.getHealthScore());
-                vo.setSlope(snapshot.getSlope());
-                vo.setT1Points(snapshot.getT1Points());
+                vo.setAnomalyScore(snapshot.getAnomalyScore());
                 vo.setPredictedBreachTimeMs(toEpochMs(snapshot.getPredictedBreachTime()));
-                vo.setOnsetTimeMs(toEpochMs(snapshot.getOnsetTime()));
+                vo.setModelVersion(snapshot.getModelVersion());
                 vo.setUpdateTimeMs(toEpochMs(snapshot.getUpdateTime()));
             }
             vos.add(vo);
@@ -122,126 +187,207 @@ public class PredictController {
     }
 
     /**
-     * 单传感器详情:原始窗口 + 平滑序列 + 趋势外推(阈值线/预测带/t1)
+     * 单传感器详情:原始窗口 + 本轮模型推理(异常判定/分位带/RUL)
+     * <p>
+     * 与 PredictTask 完全同入口构造请求(同规则/同步长)调 RemoteAiService,
+     * 同轮同传感器结果一致;历史窗口由 ruoyi-ai 拉取并在响应中回显,
+     * raw 段直接取回显的 window/windowTs 构造({ts,value} 形态,前端契约不变);
+     * 响应为模型推理产物,统计链路字段(slope/r2/band/t1 等)已移除。
+     * </p>
      *
      * @param sensorCode 传感器编号
-     * @param window     窗口点数(默认 predict.window-points,上限 2000 与 Feign 契约一致)
      */
     @GetMapping("/detail/{sensorCode}")
-    public R<DetailVO> detail(@PathVariable String sensorCode,
-                              @RequestParam(required = false) Integer window) {
-        int windowPoints = window == null ? props.getWindowPoints() : Math.min(window, 2000);
-        R<List<SensorPointDTO>> history = remoteEquipmentService.getSensorHistory(
-                sensorCode, windowPoints, SecurityConstants.INNER);
-        if (history == null || R.FAIL == history.getCode()
-                || history.getData() == null || history.getData().isEmpty()) {
-            return R.fail("历史数据获取失败(设备服务不可用或无数据)");
+    public R<DetailVO> detail(@PathVariable String sensorCode) {
+        // 传感器元数据:展示字段来源(sensor_code 列历史数据可为 null,须按元数据回查)
+        R<List<SensorMetaDTO>> metaResult = remoteEquipmentService.listAllSensors(SecurityConstants.INNER);
+        SensorMetaDTO meta = null;
+        if (metaResult != null && R.SUCCESS == metaResult.getCode() && metaResult.getData() != null) {
+            meta = metaResult.getData().stream()
+                    .filter(m -> sensorCode.equals(m.getSensorCode()))
+                    .findFirst().orElse(null);
         }
-        SensorWindow sensorWindow = SensorWindow.of(sensorCode, history.getData(), windowPoints);
-        if (sensorWindow == null) {
-            return R.fail("历史数据量不足(新传感器需等待窗口攒满)");
+        if (meta == null) {
+            return R.fail("传感器不存在");
         }
 
-        // 基线:优先用 PredictTask 已学习的缓存;无缓存临时学习(不落缓存,读接口不写共享态)
-        Baseline baseline = baselineRegistry.get(sensorCode);
-        if (baseline == null) {
-            baseline = Baseline.learn(sensorWindow, windowPoints, props.getSinePeriod());
+        // 规则查询与 PredictTask 完全一致(含按 id 升序取首条):
+        // 同传感器同轮同规则 → 同推理输入 → 结果一致
+        AlertRule rule = ruleService.lambdaQuery()
+                .eq(AlertRule::getSensorId, meta.getId())
+                .eq(AlertRule::getEnabled, 1)
+                .orderByAsc(AlertRule::getId)
+                .list().stream().findFirst().orElse(null);
+
+        // 模型推理:与 PredictTask 同入口构造请求(窗口由 ruoyi-ai 拉取)
+        AiPredictRequestDTO request = PredictTask.buildRequest(
+                meta, rule, props.getModel().getHorizon());
+        R<AiPredictResultDTO> aiResp = remoteAiService.predict(request, SecurityConstants.INNER);
+        if (aiResp == null || R.FAIL == aiResp.getCode() || aiResp.getData() == null) {
+            return R.fail("模型推理失败(" + (aiResp == null ? "推理服务无响应" : aiResp.getMsg()) + ")");
         }
+        AiPredictResultDTO ai = aiResp.getData();
 
         DetailVO vo = new DetailVO();
         vo.setSensorCode(sensorCode);
+        vo.setSensorName(meta.getSensorName());
+        vo.setEquipmentId(meta.getEquipmentId());
+        vo.setEquipmentName(meta.getEquipmentName());
+        vo.setUnit(meta.getUnit());
 
-        // 原始窗口
-        List<PointVO> raw = new ArrayList<>(sensorWindow.size());
-        for (int i = 0; i < sensorWindow.size(); i++) {
-            raw.add(new PointVO(sensorWindow.getTs()[i], round2(sensorWindow.getVal()[i])));
+        // 原始窗口:由响应回显的 window/windowTs 构造,取 min 长度防两序列意外错位
+        List<Double> aiWindow = ai.getWindow() == null ? List.of() : ai.getWindow();
+        List<Long> aiWindowTs = ai.getWindowTs() == null ? List.of() : ai.getWindowTs();
+        int rawLen = Math.min(aiWindow.size(), aiWindowTs.size());
+        List<PointVO> raw = new ArrayList<>(rawLen);
+        for (int i = 0; i < rawLen; i++) {
+            raw.add(new PointVO(aiWindowTs.get(i), round2(aiWindow.get(i))));
         }
         vo.setRaw(raw);
 
-        // 平滑序列:与 TrendExtrapolator 同口径的公共方法(前 sinePeriod-1 点无完整窗口为 NaN,跳过)
-        double[] sm = TrendExtrapolator.smoothSeries(sensorWindow, props);
-        List<PointVO> smoothed = new ArrayList<>(sensorWindow.size());
-        for (int i = 0; i < sensorWindow.size(); i++) {
-            if (Double.isNaN(sm[i])) {
-                continue;
-            }
-            smoothed.add(new PointVO(sensorWindow.getTs()[i], round2(sm[i])));
-        }
-        vo.setSmoothed(smoothed);
+        // 本轮推理产物(原样透传,与 predict_result 落库值同口径)
+        AiVO aiVo = new AiVO();
+        aiVo.setIsAnomaly(ai.getIsAnomaly());
+        aiVo.setAnomalyScore(ai.getAnomalyScore());
+        aiVo.setHealthScore(ai.getHealthScore());
+        aiVo.setQ10(ai.getQ10());
+        aiVo.setQ50(ai.getQ50());
+        aiVo.setQ90(ai.getQ90());
+        aiVo.setRulPoint(ai.getRulPoint());
+        aiVo.setRulEarliest(ai.getRulEarliest());
+        aiVo.setRulLatest(ai.getRulLatest());
+        aiVo.setModelVersion(ai.getModelVersion());
+        vo.setAi(aiVo);
 
-        // 趋势外推:与 PredictTask 同逻辑——按 sensor_id 查启用规则,优先上限
-        // (sensor_code 列靠 controller 回填、历史数据可为 null,按 code 查会漏规则;
-        // list+findFirst 而非 one():规则表历史数据存在同码多行,one() 多记录会抛异常)
-        Integer sensorId = null;
-        R<List<SensorMetaDTO>> metaResult = remoteEquipmentService.listAllSensors(SecurityConstants.INNER);
-        if (metaResult != null && R.SUCCESS == metaResult.getCode() && metaResult.getData() != null) {
-            sensorId = metaResult.getData().stream()
-                    .filter(m -> sensorCode.equals(m.getSensorCode()))
-                    .map(SensorMetaDTO::getId)
-                    .findFirst().orElse(null);
-        }
-        if (sensorId == null) {
-            return R.fail("传感器不存在");
-        }
-        AlertRule rule = ruleService.lambdaQuery()
-                .eq(AlertRule::getSensorId, sensorId)
-                .eq(AlertRule::getEnabled, 1)
-                .list().stream().findFirst().orElse(null);
-        if (rule != null && (rule.getUpperLimit() != null || rule.getLowerLimit() != null)) {
-            Double threshold = rule.getUpperLimit() != null ? rule.getUpperLimit() : rule.getLowerLimit();
-            boolean upperSide = rule.getUpperLimit() != null;
-            TrendExtrapolator.Result trend = TrendExtrapolator.extrapolate(
-                    sensorWindow, baseline, threshold, upperSide, null, props);
-            if (trend != null) {
-                TrendVO t = new TrendVO();
-                t.setA(round4(trend.getA()));
-                t.setB(round4(trend.getB()));
-                t.setR2(round4(trend.getR2()));
-                t.setThreshold(threshold);
-                t.setUpperSide(upperSide);
-                t.setAmplitude(round4(baseline.getAmplitude()));
-                t.setT1Points(trend.getT1Points());
-                t.setPredictedBreachTimeMs(trend.getT1Points() == null ? null
-                        : trend.getPredictedBreachTimeMs());
-                if (trend.getBand() != null) {
-                    List<double[]> band = trend.getBand();
-                    List<List<Double>> bandVo = new ArrayList<>(band.size());
-                    for (double[] b : band) {
-                        bandVo.add(List.of(b[0], round2(b[1]), round2(b[2]), round2(b[3])));
-                    }
-                    t.setBand(bandVo);
-                }
-                vo.setTrend(t);
-            }
-        }
-
-        // 最新快照(status 以后端任务落库为准)
+        // 最新快照的状态与更新时刻(状态机落库,任务未跑过为 null)
         PredictResult snapshot = predictResultService.lambdaQuery()
                 .eq(PredictResult::getSensorCode, sensorCode)
                 .one();
         if (snapshot != null) {
-            Map<String, Object> result = new HashMap<>();
-            result.put("status", snapshot.getStatus());
-            result.put("slope", snapshot.getSlope());
-            result.put("t1Points", snapshot.getT1Points());
-            result.put("predictedBreachTimeMs", toEpochMs(snapshot.getPredictedBreachTime()));
-            result.put("onsetTimeMs", toEpochMs(snapshot.getOnsetTime()));
-            result.put("updateTimeMs", toEpochMs(snapshot.getUpdateTime()));
-            vo.setResult(result);
+            vo.setStatus(snapshot.getStatus());
+            vo.setUpdateTimeMs(toEpochMs(snapshot.getUpdateTime()));
         }
         return R.ok(vo);
     }
 
-    private Long toEpochMs(java.time.LocalDateTime time) {
+    /**
+     * 设备级预测总览:按设备聚合各传感器最新预测快照
+     * <p>
+     * 设备健康分=成员传感器 healthScore 均值(null 跳过);
+     * 聚合状态=任一 BREACHED&gt;任一 DEGRADING&gt;NORMAL;
+     * 最紧迫 RUL=成员传感器剩余 RUL(由 predicted_breach_time 反推)最小值及对应传感器。
+     * </p>
+     */
+    @GetMapping("/overview")
+    public R<List<EquipmentOverviewVO>> overview() {
+        R<List<SensorMetaDTO>> metaResult = remoteEquipmentService.listAllSensors(SecurityConstants.INNER);
+        if (metaResult == null || R.FAIL == metaResult.getCode()
+                || metaResult.getData() == null || metaResult.getData().isEmpty()) {
+            return R.fail("传感器元数据获取失败");
+        }
+        Map<String, PredictResult> snapshots = predictResultService.lambdaQuery()
+                .list().stream()
+                .collect(Collectors.toMap(PredictResult::getSensorCode, Function.identity(), (a, b) -> a));
+        return R.ok(aggregateOverview(metaResult.getData(), snapshots, LocalDateTime.now()));
+    }
+
+    /**
+     * 按设备聚合预测总览(纯函数,便于单测)
+     *
+     * @param snapshots key=sensorCode 的最新快照
+     * @param now       RUL 换算基准时刻
+     */
+    static List<EquipmentOverviewVO> aggregateOverview(List<SensorMetaDTO> metas,
+                                                       Map<String, PredictResult> snapshots,
+                                                       LocalDateTime now) {
+        // LinkedHashMap 保序:设备按元数据出现顺序输出,前端展示稳定不跳变
+        Map<Integer, List<PredictResult>> byEquipment = new LinkedHashMap<>();
+        Map<Integer, String> equipmentNames = new LinkedHashMap<>();
+        for (SensorMetaDTO meta : metas) {
+            equipmentNames.putIfAbsent(meta.getEquipmentId(), meta.getEquipmentName());
+            // 任务未跑过的传感器无快照:设备仍进列表(默认 NORMAL),只是不参与数值聚合
+            PredictResult snapshot = snapshots.get(meta.getSensorCode());
+            if (snapshot != null) {
+                byEquipment.computeIfAbsent(meta.getEquipmentId(), k -> new ArrayList<>()).add(snapshot);
+            }
+        }
+        List<EquipmentOverviewVO> result = new ArrayList<>(equipmentNames.size());
+        for (Map.Entry<Integer, String> entry : equipmentNames.entrySet()) {
+            List<PredictResult> members = byEquipment.getOrDefault(entry.getKey(), List.of());
+            EquipmentOverviewVO vo = new EquipmentOverviewVO();
+            vo.setEquipmentId(entry.getKey());
+            vo.setEquipmentName(entry.getValue());
+            vo.setStatus(aggregateStatus(members));
+            vo.setHealthScore(averageHealth(members));
+            // 最紧迫 RUL:剩余分钟最小者(可能为负=预测失效时刻已过,恰是最紧迫)
+            Long minRul = null;
+            String minSensor = null;
+            for (PredictResult s : members) {
+                Long rul = rulMinutes(s, now);
+                if (rul != null && (minRul == null || rul < minRul)) {
+                    minRul = rul;
+                    minSensor = s.getSensorCode();
+                }
+            }
+            vo.setMinRulPoint(minRul);
+            vo.setMinRulSensorCode(minSensor);
+            result.add(vo);
+        }
+        return result;
+    }
+
+    /**
+     * 聚合状态:任一 BREACHED &gt; 任一 DEGRADING &gt; NORMAL(无快照成员按 NORMAL 兜底)
+     */
+    static String aggregateStatus(List<PredictResult> members) {
+        boolean degrading = false;
+        for (PredictResult s : members) {
+            if ("BREACHED".equals(s.getStatus())) {
+                return "BREACHED";
+            }
+            if ("DEGRADING".equals(s.getStatus())) {
+                degrading = true;
+            }
+        }
+        return degrading ? "DEGRADING" : "NORMAL";
+    }
+
+    /**
+     * 设备健康分:成员传感器 healthScore 算术平均,null 跳过(不按 0 计入);
+     * 全 null 时设备无分(返回 null,前端按无数据展示);保留 1 位小数与单传感器口径一致
+     */
+    static Double averageHealth(List<PredictResult> members) {
+        double sum = 0D;
+        int n = 0;
+        for (PredictResult s : members) {
+            if (s.getHealthScore() != null) {
+                sum += s.getHealthScore();
+                n++;
+            }
+        }
+        if (n == 0) {
+            return null;
+        }
+        return Math.round(sum / n * 10D) / 10D;
+    }
+
+    /**
+     * 剩余 RUL(分钟):predict_result 未单独存 rulPoint 原值,
+     * 由 predicted_breach_time(落库时刻+rulPoint 分钟)反推,随读取时刻自然递减
+     */
+    static Long rulMinutes(PredictResult snapshot, LocalDateTime now) {
+        if (snapshot.getPredictedBreachTime() == null) {
+            return null;
+        }
+        return ChronoUnit.MINUTES.between(now, snapshot.getPredictedBreachTime());
+    }
+
+    private Long toEpochMs(LocalDateTime time) {
         return time == null ? null : time.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
     }
 
     private Double round2(double v) {
         return Math.round(v * 100D) / 100D;
-    }
-
-    private Double round4(double v) {
-        return Math.round(v * 10000D) / 10000D;
     }
 
     /**
@@ -256,25 +402,77 @@ public class PredictController {
         private String unit;
         /** NORMAL/DEGRADING/BREACHED(predict_result 快照;任务未跑过为 null,前端按 NORMAL 处理) */
         private String status;
-        /** 健康度评分 0-100(HealthScoreService 每轮计算落库,所有状态均有值;任务未跑过为 null) */
+        /** 健康评分 0-100(模型推理每轮产出,所有状态均有值;任务未跑过为 null) */
         private Double healthScore;
-        private Double slope;
-        private Integer t1Points;
+        /** 异常评分(越高越异常) */
+        private Double anomalyScore;
+        /** 预计失效时刻(epoch millis,RUL 点估计换算;无 RUL/NORMAL 态为 null) */
         private Long predictedBreachTimeMs;
-        private Long onsetTimeMs;
+        /** 推理模型版本 */
+        private String modelVersion;
         private Long updateTimeMs;
     }
 
     /**
-     * 详情响应:原始窗口 + 平滑序列 + 趋势 + 快照
+     * 设备预测总览行
+     */
+    @Data
+    public static class EquipmentOverviewVO {
+        private Integer equipmentId;
+        private String equipmentName;
+        /** 聚合状态:任一 BREACHED>任一 DEGRADING>NORMAL(无快照默认 NORMAL) */
+        private String status;
+        /** 设备健康分:成员传感器 healthScore 均值(null 跳过;全空为 null) */
+        private Double healthScore;
+        /** 最紧迫 RUL(剩余分钟):成员传感器最小值;全空为 null(可为负=失效时刻已过) */
+        private Long minRulPoint;
+        /** 最紧迫 RUL 对应的传感器编号 */
+        private String minRulSensorCode;
+    }
+
+    /**
+     * 详情响应:传感器基本信息 + 原始窗口 + 本轮模型推理结果
      */
     @Data
     public static class DetailVO {
         private String sensorCode;
+        private String sensorName;
+        private Integer equipmentId;
+        private String equipmentName;
+        private String unit;
+        /** 状态机状态(最新快照;任务未跑过为 null) */
+        private String status;
+        private Long updateTimeMs;
         private List<PointVO> raw;
-        private List<PointVO> smoothed;
-        private TrendVO trend;
-        private Map<String, Object> result;
+        /** 本轮模型推理产物(与 PredictTask 同入口,同轮同传感器结果一致) */
+        private AiVO ai;
+    }
+
+    /**
+     * 模型推理结果(字段与 AiPredictResultDTO 同构,原样透传)
+     */
+    @Data
+    public static class AiVO {
+        /** 是否异常 */
+        private Boolean isAnomaly;
+        /** 异常评分(越高越异常) */
+        private Double anomalyScore;
+        /** 健康评分 */
+        private Double healthScore;
+        /** P10 分位预测序列(悲观界) */
+        private List<Double> q10;
+        /** P50 分位预测序列(中位数) */
+        private List<Double> q50;
+        /** P90 分位预测序列(乐观界) */
+        private List<Double> q90;
+        /** RUL 点估计(分钟,可空) */
+        private Long rulPoint;
+        /** RUL 最早失效(分钟,可空) */
+        private Long rulEarliest;
+        /** RUL 最晚失效(分钟,可空) */
+        private Long rulLatest;
+        /** 模型版本 */
+        private String modelVersion;
     }
 
     @Data
@@ -286,19 +484,17 @@ public class PredictController {
     }
 
     /**
-     * 趋势外推结果(t1 无效时 t1Points/predictedBreachTimeMs/band 为 null)
+     * 预测告警触发前证据:单传感器维度(firing=触发该告警的传感器)
      */
     @Data
-    public static class TrendVO {
-        private Double a;
-        private Double b;
-        private Double r2;
-        private Double threshold;
-        private Boolean upperSide;
-        private Double amplitude;
-        private Integer t1Points;
-        private Long predictedBreachTimeMs;
-        /** 预测带 [ts, low, mid, high] */
-        private List<List<Double>> band;
+    public static class SensorEvidenceVO {
+        private String sensorCode;
+        private String sensorName;
+        /** 传感器参数单位(rpm/°C/mm/s) */
+        private String unit;
+        /** 是否为本条告警的触发传感器(前端高亮展示) */
+        private Boolean firing;
+        /** 触发时刻之前的原始数据点(时间升序,ts epoch millis) */
+        private List<SensorPointDTO> points;
     }
 }

@@ -17,12 +17,18 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.util.Iterator;
+import java.util.Map;
 
 /**
  * MQTT 消息处理器(接入层)
  * <p>
  * 订阅 sensor/# 主题,解析传感器数据 JSON 后发布 SensorDataReceivedEvent。
+ * 另支持数采网关经固定主题 sensor/ 上报的 OPC-UA 批量 JSON 报文(顶层含 values
+ * 节点键值对,单条约 40 项,每项作为独立事件发布)。
  * 本模块是传感器数据唯一入口:落库(MySQL/TDengine)、实时推送、AI 预测告警、
  * RocketMQ 转发告警模块,均由独立监听器消费,实现事件驱动解耦。
  * </p>
@@ -90,6 +96,14 @@ public class MqttMessageHandler implements MqttCallbackExtended {
         try {
             JsonNode node = objectMapper.readTree(payload);
 
+            // OPC-UA 批量报文走固定主题 "sensor/",Java 中 "sensor/".split("/") 仅得 1 段,
+            // 基于段数的单传感器解析对它必然失效(会被"无法识别的主题段数"分支丢弃),
+            // 故改按 payload 结构识别:顶层含 values 对象即批量报文,交由专用分支处理后直接返回
+            if (node.has("values") && node.get("values").isObject()) {
+                handleOpcUaBatchMessage(topic, node);
+                return;
+            }
+
             // 先解析 topic 再取 payload 字段:多级 topic 中 equipmentCode/sensorCode 以 topic 为权威,
             // payload 里的 sensorCode 仅作交叉校验,避免两个来源不一致时数据归属错乱
             String[] parts = topic.split("/");
@@ -141,6 +155,71 @@ public class MqttMessageHandler implements MqttCallbackExtended {
         } catch (Exception e) {
             log.error("[MQTT] 消息处理异常: topic={}, payload={}, error={}", topic, payload, e.getMessage());
         }
+    }
+
+    /**
+     * 处理 OPC-UA 批量采集报文(数采网关经固定主题 sensor/ 上报)
+     * <p>
+     * 单条报文携带一组 OPC-UA 节点键值对(约 40 项),key 为完整节点 ID
+     * (如 ns=2;s=-Channel-Spindle-actSpeed)。固定主题不携带编码信息,
+     * 设备归属只能取自报文内的 node 字段。
+     * </p>
+     */
+    private void handleOpcUaBatchMessage(String topic, JsonNode root) {
+        JsonNode values = root.path("values");
+        // 空批次说明本轮采集无任何数据,发布无意义事件只会污染下游,告警后直接返回
+        if (values.isEmpty()) {
+            log.warn("[MQTT] OPC-UA 批量报文 values 为空对象,忽略: topic={}", topic);
+            return;
+        }
+
+        // 部分节点采集出错时,values 中其余节点数值通常仍有效,故仅告警不中断
+        JsonNode errors = root.path("errors");
+        if (errors.isObject() && !errors.isEmpty()) {
+            log.warn("[MQTT] OPC-UA 批量报文存在采集错误,继续处理有效值: topic={}, errors={}", topic, errors);
+        }
+
+        // node 为网关侧采集组配置的设备标识,作为 equipmentCode 透传给下游
+        String equipmentCode = root.path("node").asText(null);
+
+        // 批量报文时间戳为 epoch 毫秒数值,与存量报文的 ISO 文本格式不同,
+        // 故在本分支内联解析,不复用按文本解析的 parseTimestamp
+        long ts = root.path("timestamp").asLong(0);
+        LocalDateTime dataTs = ts > 0
+                ? LocalDateTime.ofInstant(Instant.ofEpochMilli(ts), ZoneId.systemDefault())
+                : LocalDateTime.now();
+
+        int published = 0;
+        int total = 0;
+        Iterator<Map.Entry<String, JsonNode>> fields = values.fields();
+        while (fields.hasNext()) {
+            Map.Entry<String, JsonNode> entry = fields.next();
+            total++;
+            JsonNode valueNode = entry.getValue();
+            // 下游事件链路按 Double 数值消费:数值直接取值,布尔状态量归一化为
+            // 1.0/0.0 以便统一存储与阈值判断;字符串(如主轴名)、null 等无法量化,
+            // 跳过避免产生脏数据
+            Double sensorValue;
+            if (valueNode.isNumber()) {
+                sensorValue = valueNode.asDouble();
+            } else if (valueNode.isBoolean()) {
+                sensorValue = valueNode.asBoolean() ? 1.0 : 0.0;
+            } else {
+                log.debug("[MQTT] OPC-UA 节点值类型不可量化,跳过: topic={}, key={}, type={}",
+                        topic, entry.getKey(), valueNode.getNodeType());
+                continue;
+            }
+
+            // sensorCode 原样保留完整节点 ID:节点 ID 本身即唯一标识,
+            // 任何截取都会丢失命名空间等归属信息,导致下游无法回查
+            eventPublisher.publishEvent(new SensorDataReceivedEvent(
+                    this, entry.getKey(), sensorValue, 0, dataTs, topic, equipmentCode));
+            published++;
+        }
+
+        // 单条约 40 项,逐条 info 会刷屏,仅打一条汇总日志
+        log.info("[MQTT] OPC-UA 批量事件发布完成: topic={}, node={}, timestamp={}, 发布 {}/{} 项",
+                topic, equipmentCode, dataTs, published, total);
     }
 
     /**

@@ -16,6 +16,7 @@ import com.ruoyi.alert.service.impl.WorkOrderServiceImpl;
 import com.ruoyi.common.core.domain.R;
 import com.ruoyi.common.core.exception.ServiceException;
 import com.ruoyi.equipment.api.RemoteEquipmentService;
+import com.ruoyi.equipment.api.domain.EquipmentMetaDTO;
 import com.ruoyi.equipment.api.domain.SensorMetaDTO;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeAll;
@@ -409,7 +410,7 @@ class WorkOrderServiceImplTest {
     }
 
     @Test
-    @DisplayName("计划建单留痕:CREATE 日志含计划编号与处理人(add-maintenance-plan 建单路径)")
+    @DisplayName("计划建单留痕:CREATE 日志含计划编号与设备负责人(remove-plan-assignee 建单取设备负责人)")
     void createLogFromPlan() {
         MaintenancePlan plan = new MaintenancePlan();
         plan.setId(7L);
@@ -417,8 +418,11 @@ class WorkOrderServiceImplTest {
         plan.setEquipmentId(10);
         plan.setEquipmentName("1号离心泵");
         plan.setMaintenanceType("一级保养");
-        plan.setAssigneeId(9L);
-        plan.setAssigneeName("张三");
+        // 计划不再承载负责人,建单时经 Feign 查设备绑定负责人
+        EquipmentMetaDTO meta = new EquipmentMetaDTO();
+        meta.setEquipmentUserId(9);
+        meta.setEquipmentUserName("张三");
+        when(remoteEquipmentService.getEquipmentMeta(any(), anyString())).thenReturn(R.ok(meta));
 
         WorkOrder order = workOrderService.createFromPlan(plan);
 

@@ -1,5 +1,6 @@
 package com.ruoyi.alert.service;
 
+import com.ruoyi.alert.api.domain.WorkOrderCreateDTO;
 import com.ruoyi.alert.entity.AlertEvent;
 import com.ruoyi.alert.entity.MaintenancePlan;
 import com.ruoyi.alert.entity.WorkOrder;
@@ -45,6 +46,21 @@ public interface WorkOrderService {
      * @return 生成的工单;同日已有该计划工单时返回 null(跳过语义)
      */
     WorkOrder createFromPlan(MaintenancePlan plan);
+
+    /**
+     * 手动创建维保工单
+     * <p>
+     * 供 MCP→Feign 内部接口调用(区别于告警事件/维护计划的自动建单):
+     * 必填缺失抛 ServiceException 将中文错误回传调用方;手动创建不去重
+     * (人工/AI 主动建单是明确意图,重复应由调用方自查);related_id 不设
+     * (无告警/计划等自动来源可追溯)。
+     * </p>
+     *
+     * @param cmd      建单命令
+     * @param operator 操作人(MCP 链路传 ai-assistant,流转留痕用)
+     * @return 创建成功的工单(含 id/orderNo)
+     */
+    WorkOrder createManual(WorkOrderCreateDTO cmd, String operator);
 
     /**
      * 转派处理人

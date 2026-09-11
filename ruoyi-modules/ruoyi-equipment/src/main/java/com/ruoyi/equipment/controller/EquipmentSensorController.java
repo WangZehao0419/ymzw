@@ -63,6 +63,21 @@ public class EquipmentSensorController {
     }
 
     /**
+     * 采集设备健康基线
+     * <p>
+     * 该设备每个传感器取当前时刻前最近 1024 个原始数据点(ts 升序)序列化存 sensor_baseline;
+     * 窗口内无数据的传感器基线置 null。返回 {collected: 采集数, empty: 无数据数}。
+     * </p>
+     *
+     * @param equipmentId 设备ID
+     * @return 采集结果计数
+     */
+    @PostMapping("/baseline/{equipmentId}/collect")
+    public AjaxResult collectBaseline(@PathVariable Integer equipmentId) {
+        return AjaxResult.success(equipmentSensorService.collectBaseline(equipmentId));
+    }
+
+    /**
      * 查询指定设备的传感器列表
      *
      * @param equipmentId 设备ID

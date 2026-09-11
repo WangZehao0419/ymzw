@@ -79,6 +79,21 @@ public interface TdSensorDataMapper {
     List<SensorPointDTO> selectRecentWindow(@Param("sensorId") Integer sensorId, @Param("n") int n);
 
     /**
+     * 查询单个传感器在指定时刻之前的最近 n 条时序数据(按时间倒序,调用方反转为升序使用)
+     * <p>
+     * 预测告警"触发前证据"专用:历史记录的窗口须截止于 triggerTime,
+     * 不能用 selectRecentWindow(那会混入触发后的新数据)。
+     * </p>
+     *
+     * @param sensorId 传感器 ID(超级表 tag,与 MySQL 传感器主键同源)
+     * @param n        窗口条数(&gt;0,由 Controller 截断到上限)
+     * @param end      时间上界(不含,取该时刻之前的数据;null 等价于无上界)
+     * @return end 时刻之前的最近 n 个数据点(ts 降序),无数据返回空列表
+     */
+    List<SensorPointDTO> selectRecentWindowBefore(@Param("sensorId") Integer sensorId, @Param("n") int n,
+                                                  @Param("end") LocalDateTime end);
+
+    /**
      * 查询单个传感器的最新一条时序数据
      *
      * @param sensorId 传感器 ID

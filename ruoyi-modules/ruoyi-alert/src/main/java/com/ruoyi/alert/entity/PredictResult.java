@@ -34,7 +34,23 @@ public class PredictResult {
     @TableField("health_score")
     private Double healthScore;
 
-    /** 趋势斜率(WLS 拟合) */
+    /** 异常评分(越高越异常,pdm-server 推理输出) */
+    @TableField("anomaly_score")
+    private Double anomalyScore;
+
+    /** RUL 最早失效剩余分钟数(推理输出,模型未产出 RUL 时为 null) */
+    @TableField("rul_earliest")
+    private Long rulEarliest;
+
+    /** RUL 最晚失效剩余分钟数(推理输出,模型未产出 RUL 时为 null) */
+    @TableField("rul_latest")
+    private Long rulLatest;
+
+    /** 推理模型版本(结果溯源与模型迭代比对) */
+    @TableField("model_version")
+    private String modelVersion;
+
+    /** 趋势斜率(WLS 拟合;B4 切模型推理后不再写入,列保留兼容历史数据) */
     @TableField("slope")
     private Double slope;
 
@@ -42,11 +58,11 @@ public class PredictResult {
     @TableField("t1_points")
     private Integer t1Points;
 
-    /** 预测越限时间(趋势外推) */
+    /** 预测越限时间(B4 起=落库时刻+rulPoint 分钟;无 RUL/NORMAL 态为 null) */
     @TableField("predicted_breach_time")
     private LocalDateTime predictedBreachTime;
 
-    /** 劣化起点时间 */
+    /** 劣化起点时间(统计链路遗留,B4 切模型推理后不再写入) */
     @TableField("onset_time")
     private LocalDateTime onsetTime;
 

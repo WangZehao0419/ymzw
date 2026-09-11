@@ -27,8 +27,14 @@ target/
 
 .github
 docs
-.m2-repo
-*-tcplocalhost1883
+.m2repo
+.trae
+.home
+logs
+.venv
+*-tcp*
+settings-local.xml
+settings-trae.xml
 
 ### JRebel ###
 rebel.xml
@@ -49,3 +55,4 @@ nbdist/
 !*/build/*.java
 !*/build/*.html
 !*/build/*.xml
+

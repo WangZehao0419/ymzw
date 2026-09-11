@@ -58,38 +58,51 @@
     <insert id="insertOne">
         <bind name="tsStr"
               value="@java.time.format.DateTimeFormatter@ofPattern('yyyy-MM-dd HH:mm:ss.SSS').format(ts)"/>
-        INSERT INTO cloud_iot.sensor_${sensorId} USING cloud_iot.sensor_data TAGS(${sensorId}, ${equipmentId}) VALUES('${tsStr}', ${val})
+        INSERT INTO ymzw.sensor_${sensorId} USING ymzw.sensor_data TAGS(${sensorId}, ${equipmentId}) VALUES('${tsStr}', ${val})
     </insert>
 
     <!-- LIMIT/OFFSET 用 ${} 数字拼接:部分 TDengine REST 驱动对 LIMIT 子句
          参数化支持不佳,int 形参本身无注入面,沿用原 JdbcTemplate 版策略 -->
     <select id="queryHistory" resultMap="TdSensorPointMap">
         <include refid="bindTimes"/>
-        SELECT sensor_id, ts, val FROM cloud_iot.sensor_data
+        SELECT sensor_id, ts, val FROM ymzw.sensor_data
         <include refid="historyWhere"/>
         ORDER BY ts DESC LIMIT ${limit} OFFSET ${offset}
     </select>
 
     <select id="countHistory" resultType="long">
         <include refid="bindTimes"/>
-        SELECT COUNT(*) FROM cloud_iot.sensor_data
+        SELECT COUNT(*) FROM ymzw.sensor_data
         <include refid="historyWhere"/>
     </select>
 
     <select id="queryLatest" resultMap="TdSensorPointMap">
-        SELECT sensor_id, ts, val FROM cloud_iot.sensor_data WHERE sensor_id = ${sensorId} ORDER BY ts DESC LIMIT 1
+        SELECT sensor_id, ts, val FROM ymzw.sensor_data WHERE sensor_id = ${sensorId} ORDER BY ts DESC LIMIT 1
     </select>
 
     <!-- 历史窗口:sensorId 主键 int、n 已由 Controller 截断为正 int,${} 数字拼接
          无注入面;LIMIT 参数化在 REST 驱动上不可靠,沿用既有策略 -->
     <select id="selectRecentWindow" resultMap="SensorPointDtoMap">
-        SELECT ts, val FROM cloud_iot.sensor_data WHERE sensor_id = ${sensorId} ORDER BY ts DESC LIMIT ${n}
+        SELECT ts, val FROM ymzw.sensor_data WHERE sensor_id = ${sensorId} ORDER BY ts DESC LIMIT ${n}
+    </select>
+
+    <!-- 触发前历史窗口:加 end 时间上界(预测告警证据专用);
+         endStr 由 bind 格式化为 TDengine 可靠时间串,null 时退化为无上界(等价 selectRecentWindow) -->
+    <select id="selectRecentWindowBefore" resultMap="SensorPointDtoMap">
+        <bind name="endStr"
+              value="end == null ? null : @java.time.format.DateTimeFormatter@ofPattern('yyyy-MM-dd HH:mm:ss.SSS').format(end)"/>
+        SELECT ts, val FROM ymzw.sensor_data
+        WHERE sensor_id = ${sensorId}
+        <if test="endStr != null">
+            AND ts &lt; '${endStr}'
+        </if>
+        ORDER BY ts DESC LIMIT ${n}
     </select>
 
     <!-- 按 tag 列 sensor_id 分组,LAST() 取组内最新值;
          聚合列直接 AS ts/val 对齐普通查询列名,复用同一 resultMap -->
     <select id="queryLatestByEquipment" resultMap="TdSensorPointMap">
-        SELECT sensor_id, LAST(ts) AS ts, LAST(val) AS val FROM cloud_iot.sensor_data WHERE equipment_id = ${equipmentId} GROUP BY sensor_id
+        SELECT sensor_id, LAST(ts) AS ts, LAST(val) AS val FROM ymzw.sensor_data WHERE equipment_id = ${equipmentId} GROUP BY sensor_id
     </select>
 
 </mapper>

@@ -49,10 +49,10 @@ public class RemoteEquipmentFallbackFactory implements FallbackFactory<RemoteEqu
             }
 
             @Override
-            public R<List<SensorPointDTO>> getSensorHistory(String sensorCode, Integer points, String source)
+            public R<List<SensorPointDTO>> getSensorHistory(String sensorCode, Integer points, Long endTimeTs, String source)
             {
                 // 历史窗口是数据展示类查询:降级返回空列表而非 R.fail,调用方按空数据渲染,不中断链路
-                log.warn("获取传感器历史窗口数据降级返回空列表, sensorCode={}, points={}", sensorCode, points);
+                log.warn("获取传感器历史窗口数据降级返回空列表, sensorCode={}, points={}, endTimeTs={}", sensorCode, points, endTimeTs);
                 return R.ok(Collections.emptyList());
             }
 

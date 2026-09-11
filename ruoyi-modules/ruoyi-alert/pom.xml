@@ -56,6 +56,18 @@
             <artifactId>ruoyi-api-system</artifactId>
         </dependency>
 
+        <!-- AI推理 Feign 接口（预测性维护:经 ruoyi-ai 代理调用 pdm-server 推理） -->
+        <dependency>
+            <groupId>com.ruoyi</groupId>
+            <artifactId>ruoyi-api-ai</artifactId>
+        </dependency>
+
+        <!-- 维保工单内部接口契约（ruoyi-mcp 经 Feign 手动建单/流转工单，本模块实现 /inner/work-orders 端点） -->
+        <dependency>
+            <groupId>com.ruoyi</groupId>
+            <artifactId>ruoyi-api-alert</artifactId>
+        </dependency>
+
         <!-- MyBatis-Plus -->
         <dependency>
             <groupId>com.baomidou</groupId>

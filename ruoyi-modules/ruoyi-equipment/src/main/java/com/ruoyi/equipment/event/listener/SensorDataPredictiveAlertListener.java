@@ -1,6 +1,5 @@
 package com.ruoyi.equipment.event.listener;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.ruoyi.equipment.entity.EquipmentSensor;
 import com.ruoyi.equipment.event.AlertTriggeredEvent;
 import com.ruoyi.equipment.event.SensorDataReceivedEvent;
@@ -42,10 +41,8 @@ public class SensorDataPredictiveAlertListener {
         String sensorCode = event.getSensorCode();
         Double sensorValue = event.getSensorValue();
 
-        // 查询传感器信息获取 sensorId 和 equipmentId
-        EquipmentSensor sensor = sensorService.getOne(
-                new LambdaQueryWrapper<EquipmentSensor>()
-                        .eq(EquipmentSensor::getSensorCode, sensorCode));
+        // 查询传感器信息获取 sensorId 和 equipmentId(高频报文走 60 秒 TTL 缓存,避免逐事件查库)
+        EquipmentSensor sensor = sensorService.getByCodeCached(sensorCode);
 
         if (sensor == null) {
             log.debug("传感器未注册，跳过 AI 预测告警: sensorCode={}", sensorCode);

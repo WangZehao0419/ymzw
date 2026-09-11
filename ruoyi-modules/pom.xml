@@ -18,6 +18,7 @@
         <module>ruoyi-equipment</module>
         <module>ruoyi-alert</module>
         <module>ruoyi-inspection</module>
+        <module>ruoyi-mcp</module>
     </modules>
 
     <artifactId>ruoyi-modules</artifactId>

@@ -52,6 +52,18 @@
             <artifactId>ruoyi-common-swagger</artifactId>
         </dependency>
 
+        <!-- AI推理接口（inner 接口的请求/结果 DTO 定义在 ruoyi-api-ai,与消费方共用契约） -->
+        <dependency>
+            <groupId>com.ruoyi</groupId>
+            <artifactId>ruoyi-api-ai</artifactId>
+        </dependency>
+
+        <!-- 设备服务 Feign 接口（数据获取编排:推理前经 getSensorHistory 拉传感器历史窗口） -->
+        <dependency>
+            <groupId>com.ruoyi</groupId>
+            <artifactId>ruoyi-api-equipment</artifactId>
+        </dependency>
+
         <!-- MyBatis-Plus（SB4 专用 starter，版本由根 pom mybatis-plus-bom 管理） -->
         <dependency>
             <groupId>com.baomidou</groupId>
@@ -100,6 +112,20 @@
             <artifactId>spring-ai-alibaba-agent-framework</artifactId>
         </dependency>
 
+        <!-- Qdrant 向量库（云端部署 8.145.53.117；诊断智能体 RAG 检索；版本由根 pom spring-ai-bom 2.0.0-M1 统一管理,
+             与 spring-ai-alibaba 2.0.0-M1.1 锁定配套,不可单独升级） -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-vector-store-qdrant</artifactId>
+        </dependency>
+
+        <!-- MCP Client（连接 ruoyi-mcp 维保工单 MCP Server，Streamable-HTTP 传输；
+             版本由根 pom spring-ai-bom 管理，自动配置 ToolCallbackProvider 供 ReactAgent 调用 MCP 工具） -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-mcp-client</artifactId>
+        </dependency>
+
         <!-- Reactor（Flux 流式响应，agent-framework 传递提供，显式声明保证类路径稳定） -->
         <dependency>
             <groupId>io.projectreactor</groupId>
@@ -116,6 +142,13 @@
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
+        </dependency>
+
+        <!-- 单元测试（PdmScoringService 业务评分用,与 ruoyi-alert 同配置） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
         </dependency>
     </dependencies>
 

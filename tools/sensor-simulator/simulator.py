@@ -7,12 +7,14 @@
     sensor/{equipmentCode}/{sensorCode} → MqttMessageHandler → SensorDataReceivedEvent → 落库/推送/告警
 
 双模拟器分工:
-    - 本脚本管一号机床 EQ-001(TEMP-001 固定温度曲线轮询: 2 分钟一个加工周期,
-      23°C 起步升温 → 100°C 顶峰 → 30 秒快速冷却回 23°C 闭环, 曲线每周期越过 75°C 告警线);
+    - 本脚本管一号机床 EQ-001 的固定曲线轮询(每 2 分钟一个加工周期, 首尾闭环):
+      TEMP-001 温度 23°C → 100°C → 23°C(每周期第 62~99 秒越过 75°C 告警线);
+      HUM-001 湿度 40%RH → 90%RH → 40%RH(未配告警阈值);
+      另含 EQ-002 的 VIB-001 振动 0.5 → 4.5 → 0.5 mm/s(顶峰触及 ISO 20816 C/D 分界, 未配告警阈值);
     - 同目录 simulator-predict.py 管二号机床 EQ-002(预测告警 PREDICT 演示:
       TEMP-002 线性漂移 + VIB-002 噪声增大 + --backfill 预热回填 + maintenance 维护复位);
     - 两者按设备隔离(topic 前缀 sensor/EQ-001/# 与 sensor/EQ-002/#),
-      可同时运行互不干扰。
+      可同时运行互不干扰(本脚本的 VIB-001 例外, 发布到 sensor/EQ-002/VIB-001)。
 
 使用方法:
     1. 安装依赖: pip install paho-mqtt
@@ -25,8 +27,6 @@
 """
 
 import json
-import math
-import random
 import threading
 import time
 import uuid
@@ -42,19 +42,11 @@ BROKER_PORT = 1883
 # 每轮发布间隔(秒): 一轮内所有传感器各发一个点
 PUBLISH_INTERVAL_SECONDS = 1.0
 
-# 正弦波完整周期占用点数: 控制正常期曲线起伏速度
-# [联动] 与 simulator-predict.py 及后端 ruoyi-alert 的 predict.sine-period 保持一致
-SINE_PERIOD_CYCLES = 60
-
 # 传感器列表
 # 字段说明:
 #   sensorCode / equipmentCode / equipmentId: 业务编码与设备 ID(sensorCode 必须与 equipment_sensor 表一致)
-#   profile: 固定值列表轮询模式(可选), 按周期计数器依次取值, 取完从头循环;
-#            配置后优先于正弦波/越界机制, 越界状态由值与阈值比较得出
-#   normal_min / normal_max: 正弦波模式正常波动范围(正弦波 + 噪声)
-#   alert_upper / alert_lower: 越界告警阈值, None 表示不启用该方向越界
-#   breach_cycle: 每多少个周期触发一次越界(0 表示从不越界, 仅正弦波模式生效)
-#   breach_duration: 越界持续点数(需 >= 2 才能演示告警防抖/持续点数判定, 且应 < breach_cycle)
+#   profile: 固定值列表, 按周期计数器依次取值, 取完从头循环(首尾衔接闭环)
+#   alert_upper / alert_lower: 越界告警阈值(严格大于/小于判定), None 表示不启用该方向越界
 
 # TEMP-001 固定温度曲线: 120 点 = 120 秒 = 每 2 分钟一个完整加工周期
 # 形态: 23°C 起步 → 前 90 秒线性升温至 100°C 顶峰 → 后 30 秒快速冷却回 23°C(首尾衔接闭环) → 循环
@@ -76,6 +68,47 @@ TEMP_PROFILE = [
     46.1, 43.5, 41.0, 38.4, 35.8, 33.3, 30.7, 28.1, 25.6, 23.0,
 ]
 
+# HUM-001 固定湿度曲线: 120 点 = 120 秒 = 每 2 分钟一个完整周期(与温度曲线同步)
+# 形态: 40%RH 起步 → 前 90 秒线性升至 90%RH 顶峰(模拟加工中油雾/切削液蒸发增湿)
+#       → 后 30 秒快速回落回 40%RH(首尾衔接闭环) → 循环
+HUM_PROFILE = [
+    # 上升段 第 1~90 秒: 40 → 90
+    40.0, 40.6, 41.1, 41.7, 42.2, 42.8, 43.4, 43.9, 44.5, 45.1,
+    45.6, 46.2, 46.7, 47.3, 47.9, 48.4, 49.0, 49.6, 50.1, 50.7,
+    51.2, 51.8, 52.4, 52.9, 53.5, 54.0, 54.6, 55.2, 55.7, 56.3,
+    56.9, 57.4, 58.0, 58.5, 59.1, 59.7, 60.2, 60.8, 61.3, 61.9,
+    62.5, 63.0, 63.6, 64.2, 64.7, 65.3, 65.8, 66.4, 67.0, 67.5,
+    68.1, 68.7, 69.2, 69.8, 70.3, 70.9, 71.5, 72.0, 72.6, 73.1,
+    73.7, 74.3, 74.8, 75.4, 76.0, 76.5, 77.1, 77.6, 78.2, 78.8,
+    79.3, 79.9, 80.4, 81.0, 81.6, 82.1, 82.7, 83.3, 83.8, 84.4,
+    84.9, 85.5, 86.1, 86.6, 87.2, 87.8, 88.3, 88.9, 89.4, 90.0,
+    # 下降段 第 91~120 秒: 90 → 40(快速回落, 末值回到起点湿度, 轮询时首尾无缝衔接)
+    88.3, 86.7, 85.0, 83.3, 81.7, 80.0, 78.3, 76.7, 75.0, 73.3,
+    71.7, 70.0, 68.3, 66.7, 65.0, 63.3, 61.7, 60.0, 58.3, 56.7,
+    55.0, 53.3, 51.7, 50.0, 48.3, 46.7, 45.0, 43.3, 41.7, 40.0,
+]
+
+# VIB-001 固定振动曲线: 120 点 = 120 秒 = 每 2 分钟一个完整周期(与温度/湿度曲线同步)
+# 形态: 0.5 mm/s 起步 → 前 90 秒线性升至 4.5 mm/s 顶峰 → 后 30 秒快速回落回 0.5(首尾衔接闭环) → 循环
+# ISO 20816-3 Group 2 分区参考: A ≤1.4 / B 1.4~2.8 / C 2.8~4.5 / D >4.5 (mm/s RMS)
+# 曲线第 53~102 秒处于 C 区(不满意, 需计划检修), 顶峰 4.5 恰好触及 C/D 分界但不越过
+VIB_PROFILE = [
+    # 上升段 第 1~90 秒: 0.5 → 4.5
+    0.5, 0.54, 0.59, 0.63, 0.68, 0.72, 0.77, 0.81, 0.86, 0.9,
+    0.95, 0.99, 1.04, 1.08, 1.13, 1.17, 1.22, 1.26, 1.31, 1.35,
+    1.4, 1.44, 1.49, 1.53, 1.58, 1.62, 1.67, 1.71, 1.76, 1.8,
+    1.85, 1.89, 1.94, 1.98, 2.03, 2.07, 2.12, 2.16, 2.21, 2.25,
+    2.3, 2.34, 2.39, 2.43, 2.48, 2.52, 2.57, 2.61, 2.66, 2.7,
+    2.75, 2.79, 2.84, 2.88, 2.93, 2.97, 3.02, 3.06, 3.11, 3.15,
+    3.2, 3.24, 3.29, 3.33, 3.38, 3.42, 3.47, 3.51, 3.56, 3.6,
+    3.65, 3.69, 3.74, 3.78, 3.83, 3.87, 3.92, 3.96, 4.01, 4.05,
+    4.1, 4.14, 4.19, 4.23, 4.28, 4.32, 4.37, 4.41, 4.46, 4.5,
+    # 下降段 第 91~120 秒: 4.5 → 0.5(快速回落, 末值回到起点, 轮询时首尾无缝衔接)
+    4.37, 4.23, 4.1, 3.97, 3.83, 3.7, 3.57, 3.43, 3.3, 3.17,
+    3.03, 2.9, 2.77, 2.63, 2.5, 2.37, 2.23, 2.1, 1.97, 1.83,
+    1.7, 1.57, 1.43, 1.3, 1.17, 1.03, 0.9, 0.77, 0.63, 0.5,
+]
+
 SENSORS = [
     {
         "sensorCode": "TEMP-001",
@@ -83,11 +116,8 @@ SENSORS = [
         "equipmentId": 1,
         "name": "温度传感器",
         "unit": "°C",
-        "normal_min": 20.0,
-        "normal_max": 60.0,
         "alert_upper": 75.0,
         "alert_lower": None,
-        # 固定曲线轮询, 曲线本身周期性越界, 无需再配 breach_cycle/breach_duration
         "profile": TEMP_PROFILE,
     },
     {
@@ -96,12 +126,11 @@ SENSORS = [
         "equipmentId": 1,
         "name": "湿度传感器",
         "unit": "%RH",
-        "normal_min": 30.0,
-        "normal_max": 70.0,
+        # 曲线峰值 90%RH 超规范上限(≤80%RH), 未配 alert_upper 不会告警;
+        # 需演示湿度告警时给 alert_upper 设 80 即可
         "alert_upper": None,
         "alert_lower": None,
-        "breach_cycle": 0,
-        "breach_duration": 0,
+        "profile": HUM_PROFILE,
     },
     {
         "sensorCode": "VIB-001",
@@ -109,60 +138,29 @@ SENSORS = [
         "equipmentId": 1,
         "name": "振动传感器",
         "unit": "mm/s",
-        "normal_min": 0.0,
-        "normal_max": 5.0,
+        # 顶峰 4.5 恰触及 ISO 20816 C/D 分界但不越过, 未配 alert_upper 不会告警;
+        # 需演示振动告警时给 alert_upper 设 4.5 以下的值(设 4.5 时因严格大于判定不会告警)
         "alert_upper": None,
         "alert_lower": None,
-        "breach_cycle": 0,
-        "breach_duration": 0,
+        "profile": VIB_PROFILE,
     },
 ]
 
 # ============================== 数据生成 ==============================
 
 
-def in_breach(cycle, cfg):
-    """判断当前周期是否处于越界窗口: cycle % breach_cycle == 0 起连续 breach_duration 个点"""
-    breach_cycle = cfg["breach_cycle"]
-    duration = cfg["breach_duration"]
-    if not breach_cycle or not duration:
-        return False
-    # 两个方向的阈值都没配, 则无从越界
-    if cfg["alert_upper"] is None and cfg["alert_lower"] is None:
-        return False
-    return cycle % breach_cycle < duration
-
-
 def gen_value(cycle, cfg):
     """生成一个数据点, 返回 (值, 是否越界)
 
-    固定曲线模式(cfg 含 profile): 按周期计数器轮询固定值列表, 越界状态由值与阈值比较得出;
-    正弦波模式(其余传感器): 正弦波在 [normal_min, normal_max] 内波动 + 随机噪声(量程 ±5%),
-    越界期冲高/下探(超出阈值 10%~20%)。
+    按周期计数器轮询 profile 固定值列表, 取完从头循环;
+    越界状态由值与阈值比较得出(严格大于/小于)。
     """
-    profile = cfg.get("profile")
-    if profile:
-        # cycle 从 1 开始, 取模实现取完列表后从头循环
-        value = profile[(cycle - 1) % len(profile)]
-        breach = (cfg["alert_upper"] is not None and value > cfg["alert_upper"]) or \
-                 (cfg["alert_lower"] is not None and value < cfg["alert_lower"])
-        return value, breach
-
-    if in_breach(cycle, cfg):
-        if cfg["alert_upper"] is not None:
-            # 有上限优先向上冲高
-            base = cfg["alert_upper"]
-            return base * (1.0 + random.uniform(0.10, 0.20)), True
-        # 无上限则向下探低(基于阈值绝对值, 供负/零下限时仍能产生偏移)
-        base = abs(cfg["alert_lower"])
-        return cfg["alert_lower"] - base * random.uniform(0.10, 0.20), True
-
-    mid = (cfg["normal_min"] + cfg["normal_max"]) / 2.0
-    amp = (cfg["normal_max"] - cfg["normal_min"]) / 2.0
-    value = mid + amp * math.sin(2.0 * math.pi * cycle / SINE_PERIOD_CYCLES)
-    # 随机噪声模拟真实采集抖动, 幅度为量程的 ±5%
-    value += random.uniform(-0.05, 0.05) * (cfg["normal_max"] - cfg["normal_min"])
-    return value, False
+    profile = cfg["profile"]
+    # cycle 从 1 开始, 取模实现取完列表后从头循环
+    value = profile[(cycle - 1) % len(profile)]
+    breach = (cfg["alert_upper"] is not None and value > cfg["alert_upper"]) or \
+             (cfg["alert_lower"] is not None and value < cfg["alert_lower"])
+    return value, breach
 
 
 # ============================== MQTT 连接 ==============================

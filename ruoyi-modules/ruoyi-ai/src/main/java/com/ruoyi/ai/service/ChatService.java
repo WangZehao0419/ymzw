@@ -1,9 +1,6 @@
 package com.ruoyi.ai.service;
 
-import com.ruoyi.ai.entity.vo.AiAgentVO;
 import reactor.core.publisher.Flux;
-
-import java.util.stream.DoubleStream;
 
 /**
  * AI对话服务接口
@@ -56,6 +53,4 @@ public interface ChatService {
     default Flux<String> chatStreamWithAgent(String message, String conversationId) {
         throw new RuntimeException("未实现");
     }
-
-    String predictiveAlarm(AiAgentVO agent, Integer equipmentId, Integer sensorId, Double sensorValue);
 }

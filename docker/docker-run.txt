@@ -102,8 +102,10 @@ deleteWhen=04
 fileReservedTime=48
 brokerRole=ASYNC_MASTER
 flushDiskType=ASYNC_FLUSH
-# 关键：让 broker 注册成 127.0.0.1，宿主机 Java 客户端才能直连(否则注册容器内网IP连不上)
-brokerIP1=127.0.0.1
+# 关键：注册公网 IP,本地/宿主机 Java 客户端均经公网直连。
+# 坑:127.0.0.1 仅适用于"客户端与 broker 同机"场景,客户端在本地开发机时
+# NameServer 会把 127.0.0.1:10911 下发给客户端,导致其连自己本机失败
+brokerIP1=8.145.53.117
 listenPort=10911
 autoCreateTopicEnable=true
 autoCreateSubscriptionGroup=true

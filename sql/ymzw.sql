@@ -194,6 +194,7 @@ CREATE TABLE `equipment_sensor`  (
   `sensor_status` int NULL DEFAULT 1 COMMENT '传感器状态(0-禁用,1-启用)',
   `equipment_id` int NULL DEFAULT NULL COMMENT '所属设备ID',
   `equipment_name` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NULL DEFAULT NULL COMMENT '所属设备名称(冗余字段)',
+  `sensor_baseline` text CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NULL COMMENT '健康基线(JSON数组,采集时刻前最近1024个原始数据点)',
   `create_time` datetime NULL DEFAULT NULL COMMENT '记录创建时间',
   `update_time` datetime NULL DEFAULT NULL COMMENT '记录修改时间',
   `create_user` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NULL DEFAULT NULL COMMENT '创建人',
@@ -208,22 +209,22 @@ CREATE TABLE `equipment_sensor`  (
 -- ----------------------------
 -- Records of equipment_sensor
 -- ----------------------------
-INSERT INTO `equipment_sensor` VALUES (1, 'TEMP-001', '温度传感器', '°C', 1, 1, '一号数控机床', '2026-08-28 09:57:17', NULL, NULL, NULL, 0);
-INSERT INTO `equipment_sensor` VALUES (2, 'HUM-001', '湿度传感器', '%RH', 1, 1, '一号数控机床', '2026-08-28 09:57:32', NULL, NULL, NULL, 0);
-INSERT INTO `equipment_sensor` VALUES (3, 'VIB-001', '振动传感器', 'mm/s', 1, 1, '一号数控机床', '2026-08-28 09:57:32', NULL, NULL, NULL, 0);
-INSERT INTO `equipment_sensor` VALUES (4, 'TEMP-002', '温度传感器', '°C', 1, 2, '二号数控机床', '2026-08-30 03:56:58', NULL, NULL, NULL, 0);
-INSERT INTO `equipment_sensor` VALUES (5, 'VIB-002', '振动传感器', 'mm/s', 1, 2, '二号数控机床', '2026-08-30 03:56:58', NULL, NULL, NULL, 0);
-INSERT INTO `equipment_sensor` VALUES (6, 'HUM-002', '湿度传感器', '%RH', 1, 2, '二号数控机床', '2026-08-30 03:56:58', NULL, NULL, NULL, 0);
-INSERT INTO `equipment_sensor` VALUES (7, 'AUTO-201944700160', '竞赛温度传感器-已校准', '°C', 1, 1, '一号数控机床', NULL, NULL, NULL, NULL, 1);
-INSERT INTO `equipment_sensor` VALUES (8, 'AUTO-203902747857', '竞赛温度传感器-已校准', '°C', 1, 1, '一号数控机床', NULL, NULL, NULL, NULL, 1);
-INSERT INTO `equipment_sensor` VALUES (9, 'AUTO-204039259113', '竞赛温度传感器-已校准', '°C', 1, 1, '一号数控机床', NULL, NULL, NULL, NULL, 1);
-INSERT INTO `equipment_sensor` VALUES (10, 'AUTO-205024565465', '竞赛温度传感器-已校准', '°C', 1, 1, '一号数控机床', NULL, NULL, NULL, NULL, 1);
-INSERT INTO `equipment_sensor` VALUES (11, 'AUTO-205801647844', '竞赛温度传感器-已校准', '°C', 1, 1, '一号数控机床', NULL, NULL, NULL, NULL, 1);
-INSERT INTO `equipment_sensor` VALUES (12, 'AUTO-210254255849', '竞赛温度传感器-已校准', '°C', 1, 1, '一号数控机床', NULL, NULL, NULL, NULL, 1);
-INSERT INTO `equipment_sensor` VALUES (13, 'AUTO-210427473565', '竞赛温度传感器-已校准', '°C', 1, 1, '一号数控机床', NULL, NULL, NULL, NULL, 1);
-INSERT INTO `equipment_sensor` VALUES (14, 'AUTO-210608644425', '竞赛温度传感器-已校准', '°C', 1, 1, '一号数控机床', NULL, NULL, NULL, NULL, 1);
-INSERT INTO `equipment_sensor` VALUES (15, 'AUTO-210915294302', '竞赛温度传感器-已校准', '°C', 1, 1, '一号数控机床', NULL, NULL, NULL, NULL, 1);
-INSERT INTO `equipment_sensor` VALUES (16, 'AUTO-212821666655', '竞赛温度传感器-已校准', '°C', 1, 1, '一号数控机床', NULL, NULL, NULL, NULL, 1);
+INSERT INTO `equipment_sensor` VALUES (1, 'TEMP-001', '温度传感器', '°C', 1, 1, '一号数控机床', '2026-08-28 09:57:17', NULL, NULL, NULL, 0, NULL);
+INSERT INTO `equipment_sensor` VALUES (2, 'HUM-001', '湿度传感器', '%RH', 1, 1, '一号数控机床', '2026-08-28 09:57:32', NULL, NULL, NULL, 0, NULL);
+INSERT INTO `equipment_sensor` VALUES (3, 'VIB-001', '振动传感器', 'mm/s', 1, 1, '一号数控机床', '2026-08-28 09:57:32', NULL, NULL, NULL, 0, NULL);
+INSERT INTO `equipment_sensor` VALUES (4, 'TEMP-002', '温度传感器', '°C', 1, 2, '二号数控机床', '2026-08-30 03:56:58', NULL, NULL, NULL, 0, NULL);
+INSERT INTO `equipment_sensor` VALUES (5, 'VIB-002', '振动传感器', 'mm/s', 1, 2, '二号数控机床', '2026-08-30 03:56:58', NULL, NULL, NULL, 0, NULL);
+INSERT INTO `equipment_sensor` VALUES (6, 'HUM-002', '湿度传感器', '%RH', 1, 2, '二号数控机床', '2026-08-30 03:56:58', NULL, NULL, NULL, 0, NULL);
+INSERT INTO `equipment_sensor` VALUES (7, 'AUTO-201944700160', '竞赛温度传感器-已校准', '°C', 1, 1, '一号数控机床', NULL, NULL, NULL, NULL, 1, NULL);
+INSERT INTO `equipment_sensor` VALUES (8, 'AUTO-203902747857', '竞赛温度传感器-已校准', '°C', 1, 1, '一号数控机床', NULL, NULL, NULL, NULL, 1, NULL);
+INSERT INTO `equipment_sensor` VALUES (9, 'AUTO-204039259113', '竞赛温度传感器-已校准', '°C', 1, 1, '一号数控机床', NULL, NULL, NULL, NULL, 1, NULL);
+INSERT INTO `equipment_sensor` VALUES (10, 'AUTO-205024565465', '竞赛温度传感器-已校准', '°C', 1, 1, '一号数控机床', NULL, NULL, NULL, NULL, 1, NULL);
+INSERT INTO `equipment_sensor` VALUES (11, 'AUTO-205801647844', '竞赛温度传感器-已校准', '°C', 1, 1, '一号数控机床', NULL, NULL, NULL, NULL, 1, NULL);
+INSERT INTO `equipment_sensor` VALUES (12, 'AUTO-210254255849', '竞赛温度传感器-已校准', '°C', 1, 1, '一号数控机床', NULL, NULL, NULL, NULL, 1, NULL);
+INSERT INTO `equipment_sensor` VALUES (13, 'AUTO-210427473565', '竞赛温度传感器-已校准', '°C', 1, 1, '一号数控机床', NULL, NULL, NULL, NULL, 1, NULL);
+INSERT INTO `equipment_sensor` VALUES (14, 'AUTO-210608644425', '竞赛温度传感器-已校准', '°C', 1, 1, '一号数控机床', NULL, NULL, NULL, NULL, 1, NULL);
+INSERT INTO `equipment_sensor` VALUES (15, 'AUTO-210915294302', '竞赛温度传感器-已校准', '°C', 1, 1, '一号数控机床', NULL, NULL, NULL, NULL, 1, NULL);
+INSERT INTO `equipment_sensor` VALUES (16, 'AUTO-212821666655', '竞赛温度传感器-已校准', '°C', 1, 1, '一号数控机床', NULL, NULL, NULL, NULL, 1, NULL);
 
 -- ----------------------------
 -- Table structure for gen_table

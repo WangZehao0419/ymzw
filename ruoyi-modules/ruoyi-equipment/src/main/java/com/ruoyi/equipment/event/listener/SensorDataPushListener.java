@@ -1,6 +1,5 @@
 package com.ruoyi.equipment.event.listener;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.ruoyi.equipment.entity.EquipmentSensor;
 import com.ruoyi.equipment.entity.vo.MonitorDataVO;
 import com.ruoyi.equipment.event.SensorDataReceivedEvent;
@@ -35,10 +34,8 @@ public class SensorDataPushListener {
     @EventListener
     @Order(1)
     public void onSensorDataReceived(SensorDataReceivedEvent event) {
-        // 查找传感器信息用于构建 VO
-        EquipmentSensor sensor = sensorService.getOne(
-                new LambdaQueryWrapper<EquipmentSensor>()
-                        .eq(EquipmentSensor::getSensorCode, event.getSensorCode()));
+        // 查找传感器信息用于构建 VO(高频报文走 60 秒 TTL 缓存,避免逐事件查库)
+        EquipmentSensor sensor = sensorService.getByCodeCached(event.getSensorCode());
 
         if (sensor == null) {
             log.debug("传感器未注册，跳过推送: sensorCode={}", event.getSensorCode());

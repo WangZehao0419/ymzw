@@ -34,6 +34,12 @@
           <header-alert id="header-alert" class="right-menu-item hover-effect" />
         </el-tooltip>
 
+        <el-tooltip content="AI 助手" effect="dark" placement="bottom">
+          <div class="right-menu-item hover-effect ai-chat-trigger" @click="aiChatVisible = true">
+            <i class="el-icon-chat-dot-round ai-chat-icon" />
+          </div>
+        </el-tooltip>
+
       </template>
 
       <el-dropdown class="avatar-container right-menu-item hover-effect" trigger="hover">
@@ -57,6 +63,9 @@
         </el-dropdown-menu>
       </el-dropdown>
     </div>
+
+    <!-- AI 助手流式对话抽屉：常驻不销毁，会话上下文跨开合保留 -->
+    <ai-chat-drawer :visible.sync="aiChatVisible" />
   </div>
 </template>
 
@@ -74,6 +83,7 @@ import RuoYiGit from '@/components/RuoYi/Git'
 import RuoYiDoc from '@/components/RuoYi/Doc'
 import HeaderNotice from './HeaderNotice'
 import HeaderAlert from './HeaderAlert'
+import AiChatDrawer from './AiChatDrawer'
 
 export default {
   components: {
@@ -88,7 +98,13 @@ export default {
     RuoYiGit,
     RuoYiDoc,
     HeaderNotice,
-    HeaderAlert
+    HeaderAlert,
+    AiChatDrawer
+  },
+  data() {
+    return {
+      aiChatVisible: false // AI 助手抽屉开关（.sync）
+    }
   },
   computed: {
     ...mapGetters([
@@ -219,6 +235,13 @@ export default {
         &:hover {
           background: rgba(0, 0, 0, .025)
         }
+      }
+    }
+
+    .ai-chat-trigger {
+      .ai-chat-icon {
+        font-size: 18px;
+        vertical-align: middle;
       }
     }
 

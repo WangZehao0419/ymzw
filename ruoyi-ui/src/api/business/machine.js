@@ -115,6 +115,12 @@ export function changeSensorStatus(id, status) {
   })
 }
 
+// 采集设备健康基线：该设备每个传感器取当前时刻前最近 1024 个数据点存 sensor_baseline
+// 返回 {collected: 采集数, empty: 无数据数}（AjaxResult data 包裹由全局响应拦截器展开）
+export function collectSensorBaseline(equipmentId) {
+  return request({ url: `/api/equipment/sensor/baseline/${equipmentId}/collect`, method: 'post' }).then(res => res.data || res)
+}
+
 export function listParts(query) {
   return request({
     url: '/api/part/inspection/page',

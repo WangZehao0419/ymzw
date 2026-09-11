@@ -1,0 +1,28 @@
+# Tomcat
+server:
+  port: 9213
+
+# Spring
+spring:
+  application:
+    # 应用名称
+    name: ruoyi-mcp
+  profiles:
+    # 环境配置
+    active: dev
+  cloud:
+    nacos:
+      discovery:
+        # 服务注册地址
+        server-addr: 8.145.53.117:8848
+      config:
+        # 配置中心地址
+        server-addr: 8.145.53.117:8848
+  config:
+    # 配置文件格式
+    file-extension: yml
+    import:
+      # 业务配置统一由 Nacos 配置中心下发（data_id: ruoyi-mcp-dev.yml）
+      # 注意: 配置内容须保持纯 ASCII——SCA 解析 YAML 用 JVM 默认字符集，
+      # Windows 本地(GBK)解 UTF-8 中文注释会抛 MalformedInputException 导致启动失败
+      - nacos:${spring.application.name}-${spring.profiles.active}.${spring.config.file-extension}

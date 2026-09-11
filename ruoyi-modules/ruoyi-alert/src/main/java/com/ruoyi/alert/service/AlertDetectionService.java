@@ -54,18 +54,20 @@ public class AlertDetectionService {
     /**
      * 对单个数据点做 L1 规则判定
      */
-    public void detect(SensorDataReceivedEvent event) {
+    public boolean detect(SensorDataReceivedEvent event) {
         // 传感器id
         Integer sensorId = event.getSensorId();
         if (sensorId == null) {
-            return;
+            return false;
         }
+
         // 告警规则
         List<AlertRule> rules = findRules(sensorId);
         if (rules == null || rules.isEmpty()) {
-            return;
+            return false;
         }
-        // 传感器数据
+
+        // 传感器数值
         double sensorValue = event.getSensorValue();
 
         for (AlertRule rule : rules) {
@@ -80,15 +82,16 @@ public class AlertDetectionService {
             // 已越界
             // 计数+1
             Integer count = sustainCounter.merge(rule.getId(), 1, Integer::sum);
-            // 获取触发阈值
+            // 触发阈值
             Integer need = rule.getSustainPoints();
 
-            // 判断是否触发告警
+            // 判断是否告警
             if (count >= need) {
                 sustainCounter.remove(rule.getId());
                 decideAlert(event, rule, sensorValue, breachReason, count);
             }
         }
+        return true;
     }
 
     /**

@@ -10,7 +10,9 @@ import com.ruoyi.alert.mapper.WorkOrderActionLogMapper;
 import com.ruoyi.alert.mapper.WorkOrderMapper;
 import com.ruoyi.alert.predict.PredictStateMachine;
 import com.ruoyi.alert.service.impl.WorkOrderServiceImpl;
+import com.ruoyi.common.core.domain.R;
 import com.ruoyi.equipment.api.RemoteEquipmentService;
+import com.ruoyi.equipment.api.domain.EquipmentMetaDTO;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -29,6 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -75,10 +78,15 @@ class WorkOrderServiceFromPlanTest {
         when(workOrderMapper.selectCount(any())).thenReturn(0L);
         when(workOrderMapper.insert(any(WorkOrder.class))).thenReturn(1);
         when(workOrderActionLogMapper.insert(any(WorkOrderActionLog.class))).thenReturn(1);
+        // 计划不承载负责人:建单时默认查到设备绑定负责人 张三(9),未绑定/异常分支用例自行覆盖
+        EquipmentMetaDTO meta = new EquipmentMetaDTO();
+        meta.setEquipmentUserId(9);
+        meta.setEquipmentUserName("张三");
+        when(remoteEquipmentService.getEquipmentMeta(any(), anyString())).thenReturn(R.ok(meta));
     }
 
     @Test
-    @DisplayName("计划建单字段快照:预防维护/relatedId路由计划/handler快照计划负责人,sensor 系列全空")
+    @DisplayName("计划建单字段快照:预防维护/relatedId路由计划/handler取设备绑定负责人,sensor 系列全空")
     void createFromPlanSnapshotsPlanFields() {
         WorkOrder order = workOrderService.createFromPlan(plan());
 
@@ -93,7 +101,7 @@ class WorkOrderServiceFromPlanTest {
         assertNull(order.getSensorName());
         assertNull(order.getAlertLevel());
         assertEquals("PENDING", order.getStatus());
-        // 计划侧负责人快照到处理人
+        // 处理人来自设备绑定负责人(Feign 动态查询,非计划快照)
         assertEquals(9L, order.getHandler());
         assertEquals("张三", order.getHandlerName());
         // 编号:WO + 14位时间戳 + 3位随机 = WO + 17位数字
@@ -127,13 +135,13 @@ class WorkOrderServiceFromPlanTest {
     }
 
     @Test
-    @DisplayName("计划未配置负责人:handler 空,留痕文案记待转派")
-    void createFromPlanWithoutAssignee() {
-        MaintenancePlan unassigned = plan();
-        unassigned.setAssigneeId(null);
-        unassigned.setAssigneeName(null);
+    @DisplayName("设备未绑定负责人:handler 空,留痕文案记待转派")
+    void createFromPlanWhenEquipmentHasNoOwner() {
+        // 设备元数据可查但未绑定负责人(userId 为 null)
+        when(remoteEquipmentService.getEquipmentMeta(any(), anyString()))
+                .thenReturn(R.ok(new EquipmentMetaDTO()));
 
-        WorkOrder order = workOrderService.createFromPlan(unassigned);
+        WorkOrder order = workOrderService.createFromPlan(plan());
 
         assertNotNull(order);
         assertNull(order.getHandler());
@@ -143,6 +151,24 @@ class WorkOrderServiceFromPlanTest {
         assertEquals("CREATE", captor.getValue().getAction());
         assertTrue(captor.getValue().getDetail().contains("待转派"), captor.getValue().getDetail());
         assertFalse(captor.getValue().getDetail().contains("处理人 张三"), captor.getValue().getDetail());
+    }
+
+    @Test
+    @DisplayName("Feign 查询负责人失败:handler 空,工单照常生成不丢单")
+    void createFromPlanWhenFeignFails() {
+        // equipment 服务不可用抛异常,建单不阻断
+        when(remoteEquipmentService.getEquipmentMeta(any(), anyString()))
+                .thenThrow(new RuntimeException("equipment service down"));
+
+        WorkOrder order = workOrderService.createFromPlan(plan());
+
+        assertNotNull(order);
+        assertNull(order.getHandler());
+        assertNull(order.getHandlerName());
+        verify(workOrderMapper).insert(any(WorkOrder.class));
+        ArgumentCaptor<WorkOrderActionLog> captor = ArgumentCaptor.forClass(WorkOrderActionLog.class);
+        verify(workOrderActionLogMapper).insert(captor.capture());
+        assertTrue(captor.getValue().getDetail().contains("设备未绑定负责人"), captor.getValue().getDetail());
     }
 
     @Test
@@ -160,7 +186,7 @@ class WorkOrderServiceFromPlanTest {
 
     // ============ 测试数据构造 ============
 
-    /** 完整字段的维护计划(建单输入) */
+    /** 完整字段的维护计划(建单输入,不含负责人——处理人由建单时查设备绑定) */
     private MaintenancePlan plan() {
         MaintenancePlan plan = new MaintenancePlan();
         plan.setId(7L);
@@ -169,8 +195,6 @@ class WorkOrderServiceFromPlanTest {
         plan.setEquipmentName("1号离心泵");
         plan.setMaintenanceType("一级保养");
         plan.setContent("更换润滑油并检查密封件");
-        plan.setAssigneeId(9L);
-        plan.setAssigneeName("张三");
         return plan;
     }
 }

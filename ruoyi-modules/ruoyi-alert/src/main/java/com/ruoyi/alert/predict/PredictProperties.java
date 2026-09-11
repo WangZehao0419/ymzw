@@ -4,14 +4,13 @@ import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
-import java.util.HashMap;
-import java.util.Map;
-
 /**
  * 预测性维护配置
  * <p>
- * 取数与检测参数统一收敛于此:PredictTask 的调度间隔/窗口点数、
- * 基线学习的正弦周期、后续任务(Task 4/5)检测器的阈值与 AI 预测端点。
+ * B4 起检测链路由统计算法(CUSUM/MAD/趋势外推)切换为模型推理
+ * (Feign→ruoyi-ai→pdm-server),统计算法相关配置(基线/检测阈值/拟合参数)随之删除;
+ * T2 起历史窗口由 ruoyi-ai 拉取,窗口点数配置(windowPoints)随之删除,
+ * 只保留调度通用项、状态机参数和模型推理子配置。
  * 配置块位于 application.yml 的 predict 前缀,enabled 默认关闭,演示时开启。
  * </p>
  *
@@ -25,63 +24,27 @@ public class PredictProperties {
     /** 总开关:关闭时 PredictTask 每轮调度开头直接返回(空转,不拉数据不落库) */
     private boolean enabled = false;
 
-    /** 历史窗口点数:单传感器每轮经 Feign 拉取的最近时序点数(需≥3倍sine-period,前1/3用于基线学习) */
-    private int windowPoints = 600;
-
-    /** 正弦周期点数:同相位残差 val(i)-val(i-period) 的对齐周期,与模拟器 SINE_PERIOD_CYCLES 联动 */
-    private int sinePeriod = 60;
-
     /** 预测任务调度间隔(毫秒,@Scheduled fixedDelay,上轮结束后间隔该时长再跑) */
     private long intervalMs = 30000;
 
-    /** MAD 比值阈值:|x-median|/MAD 超过判定突发(Task 4 MadDetector) */
-    private double madRatioThreshold = 2.0;
+    /** 入态连续异常轮数:isAnomaly 连续 true 达到该轮数才入态 DEGRADING(替代原 L2 突变单轮触发,防模型单轮毛刺误报) */
+    private int anomalyRounds = 2;
 
-    /** CUSUM 允差 k(Task 4 CusumDetector) */
-    private double cusumK = 0.5;
+    /** RUL 推后退出阈值(分钟):DEGRADING 态 RUL 较上轮推后超过该值视为劣化放缓,幽灵退出回 NORMAL(防长期挂不兑现的预测) */
+    private long rulDeferExitMinutes = 60;
 
-    /** CUSUM 决策阈值 h(Task 4 CusumDetector) */
-    private double cusumH = 5.0;
-
-    /** WLS 衰减因子:越接近1历史权重越高,趋势越平滑(Task 5 TrendExtrapolator) */
-    private double wlsLambda = 0.99;
-
-    /** 趋势拟合优度阈值:R2 低于该值不做外推(Task 5 TrendExtrapolator) */
-    private double r2Threshold = 0.8;
-
-    /** 最小有效斜率:低于该值视为无趋势(Task 5 TrendExtrapolator) */
-    private double minSlope = 0.005;
-
-    /** T1 阶段最大持续点数:超过则状态机升级(Task 5 状态机) */
-    private int t1MaxPoints = 2400;
-
-    /** T1 退出推后点数:DEGRADING 态 t1 较上次推后超过该点数则回 NORMAL(防幽灵告警) */
-    private int t1DeferExitPoints = 600;
-
-    /** AI 预测子配置 */
-    private Ai ai = new Ai();
-
-    /** 健康度聚合权重:键与 Task 5 聚合组件对齐(如 stat/trend/ai),未配置时为空 Map */
-    private Map<String, Double> healthWeights = new HashMap<>();
+    /** 模型推理子配置 */
+    private Model model = new Model();
 
     /**
-     * AI 预测子配置
+     * 模型推理子配置
      *
      * @author smartartisan
      */
     @Data
-    public static class Ai {
+    public static class Model {
 
-        /** AI 预测开关:未部署 AI 服务时保持 false,仅走统计+趋势外推 */
-        private boolean enabled = false;
-
-        /** AI 预测服务地址(如 http://localhost:8000) */
-        private String baseUrl = "";
-
-        /** AI 预测调用超时(毫秒) */
-        private long timeoutMs = 3000;
-
-        /** AI 预测时域(外推点数) */
-        private int horizon = 60;
+        /** 预测步长(分钟):单次推理向前外推的时长,与 RUL(rulPoint 等)的分钟口径一致 */
+        private int horizon = 48;
     }
 }

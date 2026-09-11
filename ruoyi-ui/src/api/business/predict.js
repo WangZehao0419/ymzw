@@ -24,15 +24,20 @@ export function fetchPredictDetail(sensorCode, window) {
 }
 
 // 预测告警列表（独立 predict_alert 表分页，天然仅含 PREDICT 数据，无需再传 alertType）
-// 支持传感器名称（后端 like 模糊匹配）/告警状态（eq）筛选
+// 支持设备名称（后端 like 模糊匹配）/告警状态（eq）筛选——列表以设备为主语展示
 export function fetchPredictAlerts(query) {
   const params = {
     page: query.pageNum || 1,
     size: query.pageSize || 10,
-    sensorName: query.sensorName || undefined,
+    equipmentName: query.equipmentName || undefined,
     alertStatus: query.alertStatus || undefined
   }
   return request({ url: '/api/predict/alerts', method: 'get', params }).then(pageResult)
+}
+
+// 预测告警触发前证据：该设备全部传感器在触发时刻之前的原始数据曲线（firing=触发传感器）
+export function fetchAlertEvidence(id) {
+  return request({ url: `/api/predict/alerts/${id}/evidence`, method: 'get' }).then(res => res.data || res)
 }
 
 // 设备级预测总览（B4 新增：按设备聚合健康分均值/聚合状态/最紧迫 RUL 及对应传感器）

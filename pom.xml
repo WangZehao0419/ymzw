@@ -283,6 +283,13 @@
                 <version>${ruoyi.version}</version>
             </dependency>
 
+            <!-- 告警接口 -->
+            <dependency>
+                <groupId>com.ruoyi</groupId>
+                <artifactId>ruoyi-api-alert</artifactId>
+                <version>${ruoyi.version}</version>
+            </dependency>
+
         </dependencies>
     </dependencyManagement>
 

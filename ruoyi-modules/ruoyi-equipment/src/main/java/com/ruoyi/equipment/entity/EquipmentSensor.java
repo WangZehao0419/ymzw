@@ -60,6 +60,12 @@ public class EquipmentSensor {
     private String equipmentName;
 
     /**
+     * 健康基线(JSON数组,采集时刻前最近1024个原始数据点)
+     */
+    @TableField("sensor_baseline")
+    private String sensorBaseline;
+
+    /**
      * 记录创建时间
      */
     @TableField(value = "create_time", fill = FieldFill.INSERT)

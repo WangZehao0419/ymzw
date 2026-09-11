@@ -58,11 +58,12 @@ public interface RemoteEquipmentService
      *
      * @param sensorCode 传感器编码
      * @param points 窗口条数（缺省 600,上限 2000 超过截断;服务端异常/不存在均降级返回空列表）
+     * @param endTimeTs 时间上界 epoch 毫秒（可选,不含该时刻;传入取该时刻之前最近 n 条,不传取最新 n 条）
      * @param source 请求来源
      * @return 结果
      */
     @GetMapping("/inner/sensor/{sensorCode}/history")
-    public R<List<SensorPointDTO>> getSensorHistory(@PathVariable("sensorCode") String sensorCode, @RequestParam("points") Integer points, @RequestHeader(SecurityConstants.FROM_SOURCE) String source);
+    public R<List<SensorPointDTO>> getSensorHistory(@PathVariable("sensorCode") String sensorCode, @RequestParam("points") Integer points, @RequestParam(value = "endTimeTs", required = false) Long endTimeTs, @RequestHeader(SecurityConstants.FROM_SOURCE) String source);
 
     /**
      * 下发维护复位指令（工单完成联动，MQTT maintenance/{equipmentNo}）

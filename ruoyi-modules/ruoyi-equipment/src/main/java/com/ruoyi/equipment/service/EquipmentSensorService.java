@@ -75,4 +75,20 @@ public interface EquipmentSensorService extends IRepository<EquipmentSensor> {
      * @return 是否成功
      */
     boolean updateStatus(Integer id, Integer status);
+
+    /**
+     * 按编码查询传感器元数据（带 60 秒 TTL 进程内缓存，含负缓存），供高频事件监听器使用
+     *
+     * @param sensorCode 传感器编号
+     * @return 传感器元数据，未注册返回 null
+     */
+    EquipmentSensor getByCodeCached(String sensorCode);
+
+    /**
+     * 采集设备健康基线：该设备每个传感器取当前时刻前最近 BASELINE_POINTS 个数据点序列化存 sensor_baseline
+     *
+     * @param equipmentId 设备ID
+     * @return {collected: 采集成功传感器数, empty: 无数据传感器数}
+     */
+    java.util.Map<String, Integer> collectBaseline(Integer equipmentId);
 }

@@ -1,10 +1,17 @@
 package com.ruoyi.ai.controller;
 
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.ruoyi.ai.entity.DiagnosisRecord;
+import com.ruoyi.ai.entity.query.DiagnosisRecordQuery;
 import com.ruoyi.ai.entity.vo.AiAgentVO;
+import com.ruoyi.ai.entity.vo.DiagnosisResultVO;
 import com.ruoyi.ai.enums.AgentTypeEnum;
 import com.ruoyi.ai.service.AiAgentService;
 import com.ruoyi.ai.service.ChatService;
+import com.ruoyi.ai.service.DiagnosisRecordService;
+import com.ruoyi.ai.service.DiagnosisService;
 import com.ruoyi.common.core.web.domain.AjaxResult;
+import com.ruoyi.common.core.web.page.TableDataInfo;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -34,40 +41,43 @@ public class AgentServiceController {
 
     private final AiAgentService aiAgentService;
     private final ChatService chatService;
+    private final DiagnosisService diagnosisService;
+    private final DiagnosisRecordService diagnosisRecordService;
 
-    @PostMapping("/predictive-alarm")
-    @Operation(summary = "预测性告警", description = "使用告警助手智能体进行时序预测性告警")
-    public AjaxResult predictiveAlarm(
+    /**
+     * 设备诊断（B6：Qdrant RAG + 预测数据 + LLM 报告生成）
+     * <p>
+     * 诊断智能体不存在时由 DiagnosisService 用默认 ChatModel 兜底，
+     * 保证比赛演示开箱即用（详见 DiagnosisServiceImpl.resolveChatModel 注释）。
+     * </p>
+     */
+    @PostMapping("/diagnose")
+    @Operation(summary = "设备诊断", description = "拉取预测数据+RAG知识检索，由诊断智能体生成Markdown诊断报告并落库")
+    public AjaxResult diagnose(
             @Parameter(description = "设备ID") @RequestParam Integer equipmentId,
-            @Parameter(description = "传感器ID") @RequestParam Integer sensorId,
-            @Parameter(description = "传感器数值") @RequestParam Double sensorValue) {
+            @Parameter(description = "传感器编号(如TH-001)") @RequestParam String sensorCode) {
 
-        log.info("预测性告警请求: 设备={}, 传感器={}, 数值={}", equipmentId, sensorId, sensorValue);
+        log.info("设备诊断请求: 设备={}, 传感器={}", equipmentId, sensorCode);
 
         try {
-            AiAgentVO agent = aiAgentService.getEnabledAgentByType(AgentTypeEnum.PREDICTIVE_ALARM.getCode());
-            if (agent == null) {
-                return AjaxResult.error("没有可用的预测性告警智能体");
-            }
-
-            log.info("使用预测性告警智能体: {} (ID: {})", agent.getAgentName(), agent.getId());
-
-            String content = chatService.predictiveAlarm(agent, equipmentId, sensorId, sensorValue);
-
-            Map<String, Object> result = new HashMap<>();
-            result.put("agentId", agent.getId());
-            result.put("agentName", agent.getAgentName());
-            result.put("equipmentId", equipmentId);
-            result.put("sensorId", sensorId);
-            result.put("sensorValue", sensorValue);
-            result.put("response", content);
-
-            return AjaxResult.success(result);
+            DiagnosisResultVO vo = diagnosisService.diagnose(equipmentId, sensorCode);
+            // AjaxResult.success(data) 直接携带 VO 字段，前端可平铺取用
+            return AjaxResult.success(vo);
 
         } catch (Exception e) {
-            log.error("预测性告警失败: {}", e.getMessage(), e);
-            return AjaxResult.error("预测性告警失败: " + e.getMessage());
+            log.error("设备诊断失败: {}", e.getMessage(), e);
+            return AjaxResult.error("设备诊断失败: " + e.getMessage());
         }
+    }
+
+    /**
+     * 诊断报告历史查询（equipmentId/sensorCode 可选过滤，分页）
+     */
+    @GetMapping("/diagnose/records")
+    @Operation(summary = "诊断报告历史", description = "分页查询诊断报告历史，支持按设备与传感器过滤")
+    public TableDataInfo diagnoseRecords(DiagnosisRecordQuery query) {
+        IPage<DiagnosisRecord> page = diagnosisRecordService.page(query);
+        return new TableDataInfo(page.getRecords(), page.getTotal());
     }
 
     @PostMapping("/part-inspection")
@@ -82,8 +92,6 @@ public class AgentServiceController {
             if (agent == null) {
                 return AjaxResult.error("没有可用的零件检测智能体");
             }
-
-            log.info("使用零件检测智能体: {} (ID: {})", agent.getAgentName(), agent.getId());
 
             String content = chatService.chatStream(agent.getId(), message)
                     .collect(Collectors.joining())

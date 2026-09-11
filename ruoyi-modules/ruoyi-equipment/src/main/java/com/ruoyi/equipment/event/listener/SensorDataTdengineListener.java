@@ -1,6 +1,5 @@
 package com.ruoyi.equipment.event.listener;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.ruoyi.equipment.entity.EquipmentSensor;
 import com.ruoyi.equipment.event.SensorDataReceivedEvent;
 import com.ruoyi.equipment.tdengine.TdSensorDataMapper;
@@ -33,16 +32,18 @@ public class SensorDataTdengineListener {
     @EventListener
     public void onSensorDataReceived(SensorDataReceivedEvent event) {
         try {
-            // tag 用 sensor_id,需查 MySQL 元数据把编码换成 id(MQTT 入口只携带编码)
-            EquipmentSensor sensor = sensorService.getOne(new LambdaQueryWrapper<EquipmentSensor>()
-                    .eq(EquipmentSensor::getSensorCode, event.getSensorCode()));
+            // tag 用 sensor_id,需查 MySQL 元数据把编码换成 id(MQTT 入口只携带编码);
+            // 高频报文走 60 秒 TTL 缓存,避免逐事件查库导致消费积压
+            EquipmentSensor sensor = sensorService.getByCodeCached(event.getSensorCode());
             if (sensor == null) {
                 // 未知编码无 id 可写,跳过落库:脏编码只告警一次,不逐条刷错误日志
                 log.warn("未识别的传感器编码,跳过TDengine落库: sensorCode={}", event.getSensorCode());
                 return;
             }
+            // equipmentId 取 MySQL 元数据而非事件字段:OPC-UA 批量报文不携带该字段,事件值为 0;
+            // 元数据为权威来源,且与 SensorDataPushListener 构建 VO 的取值口径一致
             // MyBatis Mapper 版写入:insertOne(sensorId, equipmentId, ts, val),语义与原 JdbcTemplate 版一致
-            tdSensorDataMapper.insertOne(sensor.getId(), event.getEquipmentId(),
+            tdSensorDataMapper.insertOne(sensor.getId(), sensor.getEquipmentId(),
                     event.getDataTimestamp(), event.getSensorValue());
             log.debug("TDengine 落库完成: sensorId={}, value={}", sensor.getId(), event.getSensorValue());
         } catch (Exception e) {

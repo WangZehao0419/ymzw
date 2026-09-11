@@ -69,13 +69,6 @@ public class MaintenancePlan {
     @TableField("last_fire_time")
     private LocalDateTime lastFireTime;
 
-    /** 负责人用户ID(可空=生成后待指派) */
-    @TableField("assignee_id")
-    private Long assigneeId;
-
-    @TableField("assignee_name")
-    private String assigneeName;
-
     /** 状态: ENABLED/PAUSED/DONE */
     @TableField("status")
     private String status;

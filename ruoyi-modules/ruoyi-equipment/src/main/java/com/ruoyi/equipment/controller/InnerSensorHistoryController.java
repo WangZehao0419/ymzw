@@ -14,6 +14,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -53,16 +56,20 @@ public class InnerSensorHistoryController {
      * <p>
      * 返回时间升序的 ts(epoch millis)/val 数据点列表;points 缺省 600、上限 2000;
      * 编码不存在、n&lt;=0 或查询异常一律返回空列表,不让异常冒泡中断调用方链路。
+     * endTimeTs 可选(epoch millis):传入时返回该时刻之前最近 n 条(预测告警
+     * "触发前证据"专用,避免历史记录混入触发后数据);不传保持"最近 n 条"现状。
      * </p>
      *
      * @param sensorCode 传感器编码（如 TH-001）
      * @param points     窗口条数（默认 600，上限 2000 超过截断）
+     * @param endTimeTs  时间上界 epoch 毫秒（可选，不含该时刻）
      * @return 升序时序数据点列表
      */
     @InnerAuth
     @GetMapping("/sensor/{sensorCode}/history")
     public R<List<SensorPointDTO>> getSensorHistory(@PathVariable("sensorCode") String sensorCode,
-                                                    @RequestParam(value = "points", required = false) Integer points) {
+                                                    @RequestParam(value = "points", required = false) Integer points,
+                                                    @RequestParam(value = "endTimeTs", required = false) Long endTimeTs) {
         int n = points == null ? DEFAULT_POINTS : points;
         if (n <= 0) {
             return R.ok(Collections.emptyList());
@@ -78,15 +85,23 @@ public class InnerSensorHistoryController {
             if (sensor == null) {
                 return R.ok(Collections.emptyList());
             }
+            // endTimeTs 有值走带时间上界查询(触发前窗口),否则保持最近 n 条
+            List<SensorPointDTO> desc;
+            if (endTimeTs != null) {
+                // epoch millis -> LocalDateTime:用系统时区,与数据写入侧(JVM 本地时间)保持同口径
+                LocalDateTime end = LocalDateTime.ofInstant(Instant.ofEpochMilli(endTimeTs), ZoneId.systemDefault());
+                desc = tdSensorDataMapper.selectRecentWindowBefore(sensor.getId(), n, end);
+            } else {
+                desc = tdSensorDataMapper.selectRecentWindow(sensor.getId(), n);
+            }
             // DESC 取最近 n 条(保证窗口是"最近"数据),再反转为时间升序便于直接绘制趋势
-            List<SensorPointDTO> desc = tdSensorDataMapper.selectRecentWindow(sensor.getId(), n);
             List<SensorPointDTO> asc = new ArrayList<>(desc);
             Collections.reverse(asc);
             return R.ok(asc);
         } catch (Exception e) {
             // TDengine 不可用等异常降级返回空列表,不冒泡
-            log.warn("[TDengine] 传感器历史窗口查询失败, sensorCode={}, points={}: {}",
-                    sensorCode, n, e.getMessage());
+            log.warn("[TDengine] 传感器历史窗口查询失败, sensorCode={}, points={}, endTimeTs={}: {}",
+                    sensorCode, n, endTimeTs, e.getMessage());
             return R.ok(Collections.emptyList());
         }
     }
