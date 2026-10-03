@@ -161,8 +161,15 @@ public class MqttMessageHandler implements MqttCallbackExtended {
      * 处理 OPC-UA 批量采集报文(数采网关经固定主题 sensor/ 上报)
      * <p>
      * 单条报文携带一组 OPC-UA 节点键值对(约 40 项),key 为完整节点 ID
-     * (如 ns=2;s=-Channel-Spindle-actSpeed)。固定主题不携带编码信息,
-     * 设备归属只能取自报文内的 node 字段。
+     * (如 ns=2;s=-Channel-Spindle-actSpeed)。固定主题不携带编码信息。
+     * </p>
+     * <p>
+     * 设备归属说明(2026-09-16 DB 取证):group 是网关侧采集组名,与
+     * equipment.equipment_no 不是同一命名空间(实测 group 值在设备表中
+     * 无对应记录,且 equipment_no 存在重复),按 group 换 equipmentId 不可行;
+     * 故本方法只透传 group 作弱标识,equipmentId 一律为事件契约的 0 占位值,
+     * 由各监听器按 sensorCode 查传感器元数据回填(TDengine/Push/Predictive/MQ
+     * 四个监听器均为该口径)。
      * </p>
      */
     private void handleOpcUaBatchMessage(String topic, JsonNode root) {
@@ -179,8 +186,10 @@ public class MqttMessageHandler implements MqttCallbackExtended {
             log.warn("[MQTT] OPC-UA 批量报文存在采集错误,继续处理有效值: topic={}, errors={}", topic, errors);
         }
 
-        // node 为网关侧采集组配置的设备标识,作为 equipmentCode 透传给下游
-        String equipmentCode = root.path("node").asText(null);
+        // group 为网关侧采集组名,作为 equipmentCode 弱标识透传给下游;
+        // 与 equipment.equipment_no 无命名空间对应关系,禁止用其反查设备 ID
+        // (设备归属由各监听器按 sensorCode 查元数据判定,见方法 javadoc)
+        String equipmentCode = root.path("group").asText(null);
 
         // 批量报文时间戳为 epoch 毫秒数值,与存量报文的 ISO 文本格式不同,
         // 故在本分支内联解析,不复用按文本解析的 parseTimestamp

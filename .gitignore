@@ -29,12 +29,14 @@ target/
 docs
 .m2repo
 .trae
+.workbuddy
 .home
 logs
 .venv
 *-tcp*
 settings-local.xml
 settings-trae.xml
+edgeCore
 
 ### JRebel ###
 rebel.xml
@@ -51,6 +53,9 @@ nbdist/
 *.log
 *.xml.versionsBackup
 *.swp
+
+# docker 中间件本地数据目录（init-middleware.sh 生成）
+docker/data/
 
 !*/build/*.java
 !*/build/*.html

@@ -50,7 +50,6 @@ public class SensorDataMqForwardListener {
             Map<String, Object> msg = new HashMap<>();
             msg.put("sensorCode", event.getSensorCode());
             msg.put("sensorValue", event.getSensorValue());
-            msg.put("equipmentId", event.getEquipmentId());
             msg.put("timestamp", event.getDataTimestamp());
             // 回填 sensorId:MQTT 入口只携带编码,而告警侧规则按主键 id 匹配,
             // 元数据查不到或查询异常均不阻断转发(消费端按无 sensorId 场景处理)
@@ -59,6 +58,16 @@ public class SensorDataMqForwardListener {
                 EquipmentSensor sensor = sensorService.getByCodeCached(event.getSensorCode());
                 if (sensor != null) {
                     msg.put("sensorId", sensor.getId());
+                    // equipmentId 同样以 MySQL 元数据为权威来源:OPC-UA 批量报文与
+                    // 存量二段主题都不携带设备 ID,事件字段恒为 0,直接透传会让 alert 侧
+                    // 设备反查(责任人/通知/工单)全部落空。与 TDengine/Push/Predictive
+                    // 三个监听器的取值口径保持一致
+                    msg.put("equipmentId", sensor.getEquipmentId());
+                } else {
+                    return;
+                    // 编码未注册:退回事件值兜底(单传感器新格式报文可能自带 payload
+                    // equipmentId;OPC-UA 批量场景该值为 0,消费端按无归属设备处理)
+//                    msg.put("equipmentId", event.getEquipmentId());
                 }
             } catch (Exception e) {
                 log.warn("sensorId 回填查询失败,消息不带 sensorId 继续转发: sensorCode={}, error={}",

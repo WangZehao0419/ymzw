@@ -233,6 +233,7 @@ export default {
       if (vo.sensorValue === null || vo.sensorValue === undefined) {
         return
       }
+      vo.sensorValue = vo.sensorValue.toFixed(2);
       s.times.push(this.formatTime(vo.createTime))
       s.values.push(vo.sensorValue)
       if (s.times.length > MAX_POINTS) {

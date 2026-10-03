@@ -46,21 +46,9 @@ docker run -d \
 
 ===========================================================================
 
-docker run --name nacos \
-    -e MODE=standalone \
-    -e SPRING_DATASOURCE_PLATFORM=mysql \
-    -e MYSQL_SERVICE_HOST=host.docker.internal \
-    -e MYSQL_SERVICE_PORT=3306 \
-    -e MYSQL_SERVICE_DB_NAME=nacos \
-    -e MYSQL_SERVICE_USER=root \
-    -e MYSQL_SERVICE_PASSWORD='123!@#QWer' \
-    -e 'MYSQL_SERVICE_DB_PARAM=characterEncoding=utf8&connectTimeout=1000&socketTimeout=3000&autoReconnect=true&useUnicode=true&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true' \
-    -p 8848:8848 \
-    -p 9848:9848 \
-    -d nacos/nacos-server:v2.5.3
-docker run -d --name nacos \
+docker run -d --name nacos3 \
   --add-host host.docker.internal:host-gateway \
-  -p 8848:8848 -p 9848:9848 \
+  -p 8848:8848 -p 9848:9848 -p 8849:8080 \
   -e MODE=standalone \
   -e SPRING_DATASOURCE_PLATFORM=mysql \
   -e MYSQL_SERVICE_HOST=host.docker.internal \
@@ -70,7 +58,12 @@ docker run -d --name nacos \
   -e MYSQL_SERVICE_PASSWORD='123!@#QWer' \
   -e MYSQL_SERVICE_DB_PARAM="characterEncoding=utf8&connectTimeout=1000&socketTimeout=3000&autoReconnect=true&useUnicode=true&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true" \
   -e NACOS_AUTH_ENABLE=false \
-  nacos/nacos-server:v2.5.3
+  -e NACOS_AUTH_ADMIN_ENABLE=false \
+  -e NACOS_AUTH_CONSOLE_ENABLE=false \
+  -e NACOS_AUTH_TOKEN='R0VFOGtGZzRxclk3THdXN08yall3VklwVVJTRTVEWjE=' \
+  -e NACOS_AUTH_IDENTITY_KEY='xqVnGeN0PTIFCXCV' \
+  -e NACOS_AUTH_IDENTITY_VALUE='NTYjRtNexGtJajrbNPljIdJ7il9qb3X9' \
+  nacos/nacos-server:v3.2.4
 
 ===========================================================================
 
@@ -125,10 +118,10 @@ docker run -d \
   apache/rocketmq:5.3.2 sh mqbroker --enable-proxy \
   -c /home/rocketmq/rocketmq-5.3.2/conf/broker.conf
 docker exec -it rmqbroker bash -c "tail -n 10 /home/rocketmq/logs/rocketmqlogs/proxy.log"
-docker run -d --name rocketmq-dashboard `
-  --network rocketmq `
-  -p 18082:8080 `
-  -e "JAVA_OPTS=-Drocketmq.namesrv.addr=rmqnamesrv:9876" `
+docker run -d --name rocketmq-dashboard \
+  --network rocketmq \
+  -p 18082:8080 \
+  -e "JAVA_OPTS=-Drocketmq.namesrv.addr=rmqnamesrv:9876" \
   apacherocketmq/rocketmq-dashboard:2.1.0
 
 ===========================================================================

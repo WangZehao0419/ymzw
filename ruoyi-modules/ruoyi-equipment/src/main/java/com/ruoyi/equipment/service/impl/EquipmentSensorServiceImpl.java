@@ -188,6 +188,7 @@ public class EquipmentSensorServiceImpl extends BaseRepository<EquipmentSensorMa
         }
     }
 
+    // todo:处理+设备id
     @Override
     public EquipmentSensor getByCodeCached(String sensorCode) {
         CacheEntry entry = codeCache.get(sensorCode);

@@ -25,7 +25,7 @@ public class SensorDataReceivedEvent extends ApplicationEvent {
     /** 传感器数值 */
     private final Double sensorValue;
 
-    /** 设备 ID（TDengine TAG 与 RocketMQ 转发均需要，报文缺失时为 0） */
+    /** 设备 ID（报文/主题未携带时为 0 占位；各监听器以 sensorCode 反查传感器元数据为权威来源，此值仅作兜底） */
     private final int equipmentId;
 
     /** 数据时间戳 */
